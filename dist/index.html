@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#101820">
+  <meta name="description" content="Bumbles is a quick, turn-based dungeon crawler. Explore, fight monsters, beat bosses, and descend forever.">
+  <title>Bumbles — Dungeon Crawler</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='13' fill='%23101820'/%3E%3Cpath d='M18 17h28v30H18z' fill='%23f7bd59'/%3E%3Cpath d='M22 25h7v7h-7zm13 0h7v7h-7z' fill='%23101820'/%3E%3Cpath d='M27 38h10v4H27z' fill='%23101820'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="./style.css">
+  <script src="./game.js" defer></script>
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand"><span class="brand-mark" aria-hidden="true">✦</span><span>BUMBLES</span><span class="brand-tag">DUNGEON CRAWLER</span></div>
+      <button class="quiet-button" id="pauseButton" type="button" aria-label="Pause game">Ⅱ <span>Pause</span></button>
+    </header>
+
+    <main class="game-layout">
+      <aside class="side-panel stats-panel" aria-label="Run status">
+        <div class="eyebrow">CURRENT RUN</div>
+        <div class="floor-number"><span>FLOOR</span><strong id="floorValue">01</strong></div>
+        <div class="divider"></div>
+        <div class="stat-heading"><span>HEALTH</span><strong id="healthValue">20 / 20</strong></div>
+        <div class="health-track"><div id="healthBar"></div></div>
+        <div class="stat-grid">
+          <div><span>MONSTERS</span><strong id="killsValue">0</strong></div>
+          <div><span>BOSSES</span><strong id="bossesValue">0</strong></div>
+        </div>
+        <div class="objective-card"><span class="objective-icon" aria-hidden="true">⌄</span><div><small>YOUR GOAL</small><strong id="goalText">Find the stairs</strong><p id="goalDetail">Explore the dungeon to descend.</p></div></div>
+      </aside>
+
+      <section class="board-section" aria-label="Dungeon game">
+        <div class="board-heading"><span id="floorLabel">THE FIRST DESCENT</span><span id="turnLabel">TURN 00</span></div>
+        <div class="board-frame">
+          <canvas id="gameCanvas" width="600" height="600" role="img" aria-label="Top-down dungeon map"></canvas>
+          <div class="overlay" id="gameOverlay" aria-live="polite">
+            <div class="overlay-card" id="overlayCard"></div>
+          </div>
+        </div>
+        <div class="board-footer"><span><i class="legend-player"></i> YOU</span><span><i class="legend-monster"></i> MONSTER</span><span><i class="legend-potion"></i> HEALTH</span><span><i class="legend-stairs"></i> STAIRS</span></div>
+      </section>
+
+      <aside class="side-panel action-panel" aria-label="Controls and events">
+        <div class="eyebrow">HOW TO PLAY</div>
+        <p class="help-copy">Move through the dungeon. Bump into monsters to fight. Reach the stairs to go deeper.</p>
+        <div class="controls-caption">MOVE <span>WASD / ARROW KEYS</span></div>
+        <div class="dpad" aria-label="Movement controls">
+          <button type="button" data-move="up" aria-label="Move up">↑</button>
+          <button type="button" data-move="left" aria-label="Move left">←</button>
+          <button type="button" data-move="down" aria-label="Move down">↓</button>
+          <button type="button" data-move="right" aria-label="Move right">→</button>
+        </div>
+        <div class="divider"></div>
+        <div class="eyebrow">LATEST EVENTS</div>
+        <div class="event-log" id="eventLog" aria-live="polite"></div>
+      </aside>
+    </main>
+    <footer class="site-footer"><span>ONE MORE FLOOR?</span><span>TAKE YOUR TIME. PAUSE ANYTIME.</span></footer>
+  </div>
+</body>
+</html>
