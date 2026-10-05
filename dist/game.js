@@ -21,6 +21,16 @@
     return [name, image];
   }));
   const spriteFor = name => ({ 'Red jelly': 'red-jelly', 'Cave bat': 'cave-bat', 'Iron imp': 'iron-imp', 'Royal jelly': 'royal-jelly', 'Sun demon': 'sun-demon', 'Ancient lich': 'ancient-lich' })[name];
+  const monsterArt = Object.fromEntries(['red-jelly', 'cave-bat', 'iron-imp', 'royal-jelly', 'sun-demon', 'ancient-lich'].map(name => {
+    const image = new Image(); image.src = `./monsters/${name}.png`;
+    image.onload = () => { if (game) draw(); };
+    return [name, image];
+  }));
+  const lootArt = Object.fromEntries(['sword', 'axe', 'helmet', 'chest'].map(name => {
+    const image = new Image(); image.src = `./loot/${name}.png`;
+    image.onload = () => { if (game) draw(); };
+    return [name, image];
+  }));
   const environment = Object.fromEntries(['buch-dungeon', 'hyptosis-batch-1', 'kyrise-crystal'].map(name => {
     const image = new Image(); image.src = `./environment/${name}.png`;
     image.onload = () => { if (game) draw(); };
@@ -28,10 +38,12 @@
   }));
   let animationTime = 0;
   let lastFrame = 0;
+  let enemyClock = 0;
   let game;
 
   function newRun() {
-    game = { floor: 1, hp: 24, maxHp: 24, kills: 0, bosses: 0, turns: 0, state: 'start', pausedFrom: null, combat: null, log: [] };
+    game = { floor: 1, hp: 24, maxHp: 24, weapon: 0, armor: 0, weaponName: 'Bare hands', kills: 0, bosses: 0, turns: 0, state: 'start', pausedFrom: null, combat: null, log: [] };
+    enemyClock = 0;
     makeFloor();
     addLog('A new descent begins.');
     sync();
@@ -88,12 +100,19 @@
     }
     const potions = [];
     for (let i = 0; i < 2; i++) { const tile = pick(3); if (tile) potions.push(tile); }
+    const loot = [];
+    for (const kind of ['weapon', 'armor', 'chest']) {
+      const tile = pick(2) || pick();
+      if (tile) loot.push({ ...tile, kind, art: kind === 'weapon' ? (game.floor % 2 ? 'sword' : 'axe') : kind === 'armor' ? 'helmet' : 'chest' });
+    }
     game.map = grid;
     game.player = { ...start, renderX: start.x, renderY: start.y };
     game.exit = exit;
     game.monsters = monsters;
     game.potions = potions;
+    game.loot = loot;
     game.bossDefeated = !bossFloor;
+    enemyClock = 0;
     game.seen = new Set();
     reveal();
   }
@@ -110,7 +129,7 @@
   }
 
   function startCombat(monster, initiatedByEnemy = false) {
-    game.combat = { monster, target: { x: monster.x, y: monster.y }, message: initiatedByEnemy ? `${monster.name} spotted you!` : `${monster.name} blocks your path.` };
+    game.combat = { monster, target: { x: monster.x, y: monster.y }, initiatedByEnemy, message: initiatedByEnemy ? `${monster.name} spotted you!` : `${monster.name} blocks your path.` };
     game.state = 'combat';
     addLog(initiatedByEnemy ? `${monster.name} caught up to you!` : `Encountered ${monster.name}!`);
   }
@@ -147,11 +166,40 @@
   function enemyTurn() {
     for (const monster of game.monsters) {
       const step = pathToPlayer(monster);
-      if (!step) continue;
-      if (step.length === 1) { startCombat(monster, true); return; }
-      monster.x = step.x;
-      monster.y = step.y;
-      if (dist(monster, game.player) === 1) { startCombat(monster, true); return; }
+      if (step) {
+        if (step.length === 1) { startCombat(monster, true); return; }
+        monster.x = step.x;
+        monster.y = step.y;
+        if (dist(monster, game.player) === 1) { startCombat(monster, true); return; }
+      } else if (Math.random() < .42) {
+        const choices = Object.values(directions)
+          .map(([dx, dy]) => ({ x: monster.x + dx, y: monster.y + dy }))
+          .filter(tile => game.map[tile.y]?.[tile.x] && !(tile.x === game.player.x && tile.y === game.player.y) && !game.monsters.some(other => other !== monster && other.x === tile.x && other.y === tile.y));
+        if (choices.length) {
+          const next = choices[rand(0, choices.length - 1)];
+          monster.x = next.x;
+          monster.y = next.y;
+        }
+      }
+    }
+  }
+
+  function collectLoot(x, y) {
+    const index = game.loot.findIndex(item => item.x === x && item.y === y);
+    if (index < 0) return;
+    const [item] = game.loot.splice(index, 1);
+    if (item.kind === 'weapon') {
+      game.weapon += 2;
+      game.weaponName = item.art === 'axe' ? 'Battle axe' : 'Sword';
+      addLog(`${game.weaponName} found! Attack +${game.weapon}.`);
+    } else if (item.kind === 'armor') {
+      game.armor++;
+      addLog(`Armor equipped! Defense +${game.armor}.`);
+    } else {
+      const reward = rand(0, 2);
+      if (reward === 0) { game.weapon++; addLog('Chest opened! Your weapon gains +1 attack.'); }
+      else if (reward === 1) { game.armor++; addLog('Chest opened! Your armor gains +1 defense.'); }
+      else { const healed = Math.min(game.maxHp - game.hp, 10); game.hp += healed; addLog(`Chest opened! Restored ${healed} health.`); }
     }
   }
 
@@ -176,11 +224,11 @@
       game.hp += healed;
       addLog(healed ? `Found a potion. +${healed} health.` : 'Found a potion. Health is full.');
     }
+    collectLoot(x, y);
     if (x === game.exit.x && y === game.exit.y) {
       if (!game.bossDefeated) addLog('The stairs are sealed. Defeat the boss!');
       else { descend(); return; }
     }
-    enemyTurn();
     sync();
   }
 
@@ -202,7 +250,7 @@
     let message;
     if (action === 'attack') {
       const critical = Math.random() < .16;
-      const damage = rand(5, 8) + Math.floor((game.floor - 1) / 2) + (critical ? 3 : 0);
+      const damage = rand(5, 8) + game.weapon + Math.floor((game.floor - 1) / 2) + (critical ? 3 : 0);
       monster.hp = Math.max(0, monster.hp - damage);
       message = `${critical ? 'Critical hit! ' : ''}You deal ${damage} damage.`;
     } else {
@@ -212,8 +260,11 @@
     }
     if (monster.hp <= 0) {
       game.monsters = game.monsters.filter(m => m !== monster);
-      game.player.x = game.combat.target.x;
-      game.player.y = game.combat.target.y;
+      if (!game.combat.initiatedByEnemy) {
+        game.player.x = game.combat.target.x;
+        game.player.y = game.combat.target.y;
+        collectLoot(game.player.x, game.player.y);
+      }
       reveal();
       game.kills++;
       if (monster.boss) {
@@ -227,7 +278,7 @@
       sync();
       return;
     }
-    const incoming = Math.max(1, monster.damage + rand(0, 2) - (action === 'block' ? monster.damage : 0));
+    const incoming = Math.max(1, monster.damage + rand(0, 2) - game.armor - (action === 'block' ? monster.damage : 0));
     monster.attackAt = animationTime + 260;
     game.player.hurtAt = animationTime + 430;
     game.hp = Math.max(0, game.hp - incoming);
@@ -253,7 +304,7 @@
   function renderOverlay() {
     overlay.classList.toggle('hidden', game.state === 'playing');
     if (game.state === 'playing') return;
-    if (game.state === 'start') overlayCard.innerHTML = `<span class="overlay-kicker">A QUICK DUNGEON RUN</span><h1>Enter the dungeon</h1><p>Move with arrows or WASD. Nearby monsters chase you. Attack or block when you meet, then find the stairs.</p><div class="overlay-actions">${button('Start exploring', 'start')}</div>`;
+    if (game.state === 'start') overlayCard.innerHTML = `<span class="overlay-kicker">A QUICK DUNGEON RUN</span><h1>Enter the dungeon</h1><p>Move with arrows or WASD. Monsters move even when you wait. Collect gear and chests, fight or block, then find the stairs.</p><div class="overlay-actions">${button('Start exploring', 'start')}</div>`;
     if (game.state === 'paused') overlayCard.innerHTML = `<span class="overlay-kicker">TAKE A BREATHER</span><h2>Paused</h2><p>Your run is waiting right here.</p><div class="overlay-actions">${button('Resume run', 'resume')}</div>`;
     if (game.state === 'combat') {
       const monster = game.combat.monster;
@@ -269,7 +320,11 @@
     $('healthBar').style.width = `${game.hp / game.maxHp * 100}%`;
     $('killsValue').textContent = game.kills;
     $('bossesValue').textContent = game.bosses;
-    $('turnLabel').textContent = `TURN ${String(game.turns).padStart(2, '0')}`;
+    $('turnLabel').textContent = `STEPS ${String(game.turns).padStart(2, '0')}`;
+    $('weaponName').textContent = game.weaponName;
+    $('weaponPower').textContent = `+${game.weapon} ATK`;
+    $('armorPower').textContent = `+${game.armor} DEF`;
+    $('weaponIcon').src = `./loot/${game.weaponName === 'Battle axe' ? 'axe' : 'sword'}.png`;
     $('floorLabel').textContent = game.floor % 5 === 0 ? `FLOOR ${game.floor} · BOSS LAIR` : (names[(game.floor - 1) % names.length] || `FLOOR ${game.floor}`);
     $('goalText').textContent = game.bossDefeated ? 'Find the stairs' : 'Defeat the boss';
     $('goalDetail').textContent = game.bossDefeated ? 'Step onto the blue stairs to descend.' : 'The stairs open after the boss falls.';
@@ -321,9 +376,18 @@
       if (sprites.potion.complete && sprites.potion.naturalWidth) drawSprite(ctx, 'potion', p.x * TILE, p.y * TILE, 0, frame, TILE);
       else drawPotion(p.x, p.y);
     } });
+    game.loot.forEach(item => {
+      if (!game.seen.has(key(item.x, item.y))) return;
+      const art = lootArt[item.art];
+      const px = item.x * TILE, py = item.y * TILE;
+      if (art.complete && art.naturalWidth) ctx.drawImage(art, px + 4, py + 4, TILE - 8, TILE - 8);
+      if (item.kind === 'chest') {
+        ctx.fillStyle = '#f5c66b'; ctx.fillRect(px + 17, py + 17, 6, 6);
+      }
+    });
     game.monsters.forEach(m => { if (game.seen.has(key(m.x, m.y))) {
-      const sprite = spriteFor(m.name);
-      if (sprites[sprite]?.complete && sprites[sprite].naturalWidth) drawSprite(ctx, sprite, m.renderX * TILE, m.renderY * TILE, entityState(m), entityFrame(m, frame), TILE);
+      const sprite = monsterArt[spriteFor(m.name)];
+      if (sprite?.complete && sprite.naturalWidth) drawMonsterArt(ctx, m, m.renderX * TILE, m.renderY * TILE, TILE);
       else drawMonster(m);
     } });
     if (sprites.hero.complete && sprites.hero.naturalWidth) drawSprite(ctx, 'hero', game.player.renderX * TILE, game.player.renderY * TILE, entityState(game.player), entityFrame(game.player, frame), TILE);
@@ -348,6 +412,14 @@
     target.drawImage(sprites[name], frame * 32, state * 32, 32, 32, Math.round(x), Math.round(y), size, size);
   }
 
+  function drawMonsterArt(target, monster, x, y, size) {
+    const art = monsterArt[spriteFor(monster.name)];
+    const frames = Math.max(1, Math.floor(art.naturalWidth / 64));
+    const frame = Math.floor(animationTime / 170 + monster.x + monster.y) % frames;
+    target.imageSmoothingEnabled = false;
+    target.drawImage(art, frame * 64, 0, 64, 64, Math.round(x), Math.round(y), size, size);
+  }
+
   function drawBattleStage(frame) {
     const stage = $('combatStage');
     if (!stage || !game.combat || game.state !== 'combat') return;
@@ -360,8 +432,9 @@
     const playerLunge = playerState === 2 ? [0,10,15,4][entityFrame(game.player, frame)] : 0;
     const monsterLunge = monsterState === 2 ? [0,-10,-18,-5][entityFrame(monster, frame)] : 0;
     if (sprites.hero.complete && sprites.hero.naturalWidth) drawSprite(battle, 'hero', 37 + playerLunge, 12, playerState, entityFrame(game.player, frame), 72);
-    const name = spriteFor(monster.name);
-    if (sprites[name]?.complete && sprites[name].naturalWidth) drawSprite(battle, name, 207 + monsterLunge, 12, monsterState, entityFrame(monster, frame), 72);
+    const art = monsterArt[spriteFor(monster.name)];
+    if (art?.complete && art.naturalWidth) drawMonsterArt(battle, monster, 207 + monsterLunge, 12, 72);
+    else if (sprites[spriteFor(monster.name)]?.complete) drawSprite(battle, spriteFor(monster.name), 207 + monsterLunge, 12, monsterState, entityFrame(monster, frame), 72);
     if (monsterState === 2 && entityFrame(monster, frame) === 2) { battle.fillStyle = '#f7c77a99'; battle.fillRect(152, 38, 38, 7); }
   }
 
@@ -370,6 +443,14 @@
     lastFrame = timestamp;
     if (game && game.state !== 'paused') {
       animationTime += delta;
+      if (game.state === 'playing') {
+        enemyClock += delta;
+        if (enemyClock >= 950) {
+          enemyClock -= 950;
+          enemyTurn();
+          if (game.state === 'combat') sync();
+        }
+      }
       const slide = Math.min(1, delta / 90);
       const entities = [game.player, ...game.monsters];
       for (const entity of entities) {

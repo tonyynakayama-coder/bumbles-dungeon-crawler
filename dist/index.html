@@ -32,7 +32,7 @@
       </aside>
 
       <section class="board-section" aria-label="Dungeon game">
-        <div class="board-heading"><span id="floorLabel">THE FIRST DESCENT</span><span id="turnLabel">TURN 00</span></div>
+        <div class="board-heading"><span id="floorLabel">THE FIRST DESCENT</span><span id="turnLabel">STEPS 00</span></div>
         <div class="board-frame">
           <canvas id="gameCanvas" width="600" height="600" role="img" aria-label="Top-down dungeon map"></canvas>
           <div class="overlay" id="gameOverlay" aria-live="polite">
@@ -40,6 +40,7 @@
           </div>
         </div>
         <div class="board-footer"><span><i class="legend-player"></i> YOU</span><span><i class="legend-monster"></i> MONSTER</span><span><i class="legend-potion"></i> HEALTH</span><span><i class="legend-stairs"></i> STAIRS</span></div>
+        <div class="gear-bar" aria-label="Equipped gear"><span><img id="weaponIcon" src="./loot/sword.png" alt=""><b id="weaponName">Bare hands</b><strong id="weaponPower">+0 ATK</strong></span><span><img src="./loot/helmet.png" alt=""><b>Armor</b><strong id="armorPower">+0 DEF</strong></span></div>
         <div class="board-controls">
           <div class="controls-caption">MOVE <span>WASD / ARROW KEYS</span></div>
           <div class="dpad" aria-label="Movement controls">
@@ -53,7 +54,7 @@
 
       <aside class="side-panel action-panel" aria-label="Controls and events">
         <div class="eyebrow">HOW TO PLAY</div>
-        <p class="help-copy">Nearby monsters follow you through the halls. Fight them, then reach the stairs to go deeper.</p>
+        <p class="help-copy">Monsters keep moving while you stand still. Find weapons, armor, and chests on each floor, then reach the stairs.</p>
         <div class="divider"></div>
         <div class="eyebrow">LATEST EVENTS</div>
         <div class="event-log" id="eventLog" aria-live="polite"></div>
