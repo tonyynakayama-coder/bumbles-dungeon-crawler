@@ -13,6 +13,21 @@
   const rand = (min, max) => min + Math.floor(Math.random() * (max - min + 1));
   const key = (x, y) => `${x},${y}`;
   const dist = (a, b) => Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
+  const spriteNames = ['hero', 'red-jelly', 'cave-bat', 'iron-imp', 'royal-jelly', 'sun-demon', 'ancient-lich', 'potion', 'stairs'];
+  const sprites = Object.fromEntries(spriteNames.map(name => {
+    const image = new Image();
+    image.src = `./sprites/${name}.png`;
+    image.onload = () => { if (game) draw(); };
+    return [name, image];
+  }));
+  const spriteFor = name => ({ 'Red jelly': 'red-jelly', 'Cave bat': 'cave-bat', 'Iron imp': 'iron-imp', 'Royal jelly': 'royal-jelly', 'Sun demon': 'sun-demon', 'Ancient lich': 'ancient-lich' })[name];
+  const environment = Object.fromEntries(['floor-0','floor-1','floor-2','wall-0','wall-1','wall-2'].map(name => {
+    const image = new Image(); image.src = `./oga/${name}.png`;
+    image.onload = () => { if (game) draw(); };
+    return [name, image];
+  }));
+  let animationTime = 0;
+  let lastFrame = 0;
   let game;
 
   function newRun() {
@@ -65,16 +80,16 @@
     const ordinaryCount = bossFloor ? 2 : Math.min(4, 2 + Math.floor(game.floor / 3));
     for (let i = 0; i < ordinaryCount; i++) {
       const tile = pick(4);
-      if (tile) monsters.push({ ...tile, boss: false, name: ['Mossling', 'Cave bat', 'Stone imp'][rand(0, 2)], hp: 7 + Math.floor(game.floor * 1.5), maxHp: 7 + Math.floor(game.floor * 1.5), damage: 2 + Math.floor(game.floor / 3) });
+      if (tile) monsters.push({ ...tile, renderX: tile.x, renderY: tile.y, boss: false, name: ['Red jelly', 'Cave bat', 'Iron imp'][rand(0, 2)], hp: 7 + Math.floor(game.floor * 1.5), maxHp: 7 + Math.floor(game.floor * 1.5), damage: 2 + Math.floor(game.floor / 3) });
     }
     if (bossFloor) {
       const tile = pick(6) || pick();
-      if (tile) monsters.push({ ...tile, boss: true, name: ['The Burrow King', 'The Ember Warden', 'The Hollow One'][((game.floor / 5) - 1) % 3], hp: 20 + game.floor * 2, maxHp: 20 + game.floor * 2, damage: 4 + Math.floor(game.floor / 3) });
+      if (tile) monsters.push({ ...tile, renderX: tile.x, renderY: tile.y, boss: true, name: ['Royal jelly', 'Sun demon', 'Ancient lich'][((game.floor / 5) - 1) % 3], hp: 20 + game.floor * 2, maxHp: 20 + game.floor * 2, damage: 4 + Math.floor(game.floor / 3) });
     }
     const potions = [];
     for (let i = 0; i < 2; i++) { const tile = pick(3); if (tile) potions.push(tile); }
     game.map = grid;
-    game.player = start;
+    game.player = { ...start, renderX: start.x, renderY: start.y };
     game.exit = exit;
     game.monsters = monsters;
     game.potions = potions;
@@ -94,19 +109,64 @@
     game.log = game.log.slice(0, 4);
   }
 
+  function startCombat(monster, initiatedByEnemy = false) {
+    game.combat = { monster, target: { x: monster.x, y: monster.y }, message: initiatedByEnemy ? `${monster.name} spotted you!` : `${monster.name} blocks your path.` };
+    game.state = 'combat';
+    addLog(initiatedByEnemy ? `${monster.name} caught up to you!` : `Encountered ${monster.name}!`);
+  }
+
+  // Breadth-first search follows corridors and avoids other monsters.
+  // The path length is the detection range, so walls can break pursuit.
+  function pathToPlayer(monster, range = 6) {
+    if (dist(monster, game.player) > range) return null;
+    const queue = [{ x: monster.x, y: monster.y, length: 0 }];
+    const seen = new Set([key(monster.x, monster.y)]);
+    const previous = new Map();
+    const occupied = new Set(game.monsters.filter(other => other !== monster).map(other => key(other.x, other.y)));
+    for (let index = 0; index < queue.length; index++) {
+      const current = queue[index];
+      if (current.x === game.player.x && current.y === game.player.y) {
+        let cursor = key(current.x, current.y);
+        const origin = key(monster.x, monster.y);
+        while (previous.get(cursor) !== origin && previous.has(cursor)) cursor = previous.get(cursor);
+        const [x, y] = cursor.split(',').map(Number);
+        return { x, y, length: current.length };
+      }
+      if (current.length >= range) continue;
+      for (const [dx, dy] of Object.values(directions)) {
+        const x = current.x + dx, y = current.y + dy, id = key(x, y);
+        if (x < 0 || y < 0 || x >= W || y >= W || !game.map[y][x] || seen.has(id) || occupied.has(id)) continue;
+        seen.add(id);
+        previous.set(id, key(current.x, current.y));
+        queue.push({ x, y, length: current.length + 1 });
+      }
+    }
+    return null;
+  }
+
+  function enemyTurn() {
+    for (const monster of game.monsters) {
+      const step = pathToPlayer(monster);
+      if (!step) continue;
+      if (step.length === 1) { startCombat(monster, true); return; }
+      monster.x = step.x;
+      monster.y = step.y;
+      if (dist(monster, game.player) === 1) { startCombat(monster, true); return; }
+    }
+  }
+
   function move(dx, dy) {
     if (game.state !== 'playing') return;
     const x = game.player.x + dx, y = game.player.y + dy;
     if (x < 0 || y < 0 || x >= W || y >= W || !game.map[y][x]) return;
     const monster = game.monsters.find(m => m.x === x && m.y === y);
     if (monster) {
-      game.combat = { monster, target: { x, y }, message: `${monster.name} blocks your path.` };
-      game.state = 'combat';
-      addLog(`Encountered ${monster.name}!`);
+      startCombat(monster);
       sync();
       return;
     }
-    game.player = { x, y };
+    game.player.x = x;
+    game.player.y = y;
     game.turns++;
     reveal();
     const potionIndex = game.potions.findIndex(p => p.x === x && p.y === y);
@@ -120,6 +180,7 @@
       if (!game.bossDefeated) addLog('The stairs are sealed. Defeat the boss!');
       else { descend(); return; }
     }
+    enemyTurn();
     sync();
   }
 
@@ -136,6 +197,8 @@
     if (game.state !== 'combat') return;
     const monster = game.combat.monster;
     game.turns++;
+    game.player.attackAt = animationTime;
+    monster.hurtAt = animationTime + 130;
     let message;
     if (action === 'attack') {
       const critical = Math.random() < .16;
@@ -149,7 +212,8 @@
     }
     if (monster.hp <= 0) {
       game.monsters = game.monsters.filter(m => m !== monster);
-      game.player = game.combat.target;
+      game.player.x = game.combat.target.x;
+      game.player.y = game.combat.target.y;
       reveal();
       game.kills++;
       if (monster.boss) {
@@ -164,6 +228,8 @@
       return;
     }
     const incoming = Math.max(1, monster.damage + rand(0, 2) - (action === 'block' ? monster.damage : 0));
+    monster.attackAt = animationTime + 260;
+    game.player.hurtAt = animationTime + 430;
     game.hp = Math.max(0, game.hp - incoming);
     message += ` ${monster.name} hits for ${incoming}.`;
     addLog(message);
@@ -187,12 +253,12 @@
   function renderOverlay() {
     overlay.classList.toggle('hidden', game.state === 'playing');
     if (game.state === 'playing') return;
-    if (game.state === 'start') overlayCard.innerHTML = `<span class="overlay-kicker">A QUICK DUNGEON RUN</span><h1>Enter the dungeon</h1><p>Move with arrows or WASD. Fight monsters by choosing attack or block. Find the stairs and keep descending.</p><div class="overlay-actions">${button('Start exploring', 'start')}</div>`;
+    if (game.state === 'start') overlayCard.innerHTML = `<span class="overlay-kicker">A QUICK DUNGEON RUN</span><h1>Enter the dungeon</h1><p>Move with arrows or WASD. Nearby monsters chase you. Attack or block when you meet, then find the stairs.</p><div class="overlay-actions">${button('Start exploring', 'start')}</div>`;
     if (game.state === 'paused') overlayCard.innerHTML = `<span class="overlay-kicker">TAKE A BREATHER</span><h2>Paused</h2><p>Your run is waiting right here.</p><div class="overlay-actions">${button('Resume run', 'resume')}</div>`;
     if (game.state === 'combat') {
       const monster = game.combat.monster;
       const segments = Math.ceil(monster.hp / monster.maxHp * 8);
-      overlayCard.innerHTML = `<span class="overlay-kicker">MONSTER ENCOUNTER</span><h2>${monster.name}</h2><div class="battle-stat">${monster.hp} / ${monster.maxHp} HP</div><div class="battle-bars">${Array.from({length: 8}, (_, i) => `<i class="${i >= segments ? 'empty' : ''}"></i>`).join('')}</div><p>${game.combat.message}</p><div class="overlay-actions">${button('⚔ Attack', 'attack')}${button('▣ Block', 'block', 'secondary')}</div><div class="combat-tip">A to attack · B to block · Esc to pause</div>`;
+      overlayCard.innerHTML = `<span class="overlay-kicker">MONSTER ENCOUNTER</span><h2>${monster.name}</h2><canvas class="combat-stage" id="combatStage" width="320" height="96" role="img" aria-label="Animated battle with ${monster.name}"></canvas><div class="battle-stat">${monster.hp} / ${monster.maxHp} HP</div><div class="battle-bars">${Array.from({length: 8}, (_, i) => `<i class="${i >= segments ? 'empty' : ''}"></i>`).join('')}</div><p>${game.combat.message}</p><div class="overlay-actions">${button('⚔ Attack', 'attack')}${button('▣ Block', 'block', 'secondary')}</div><div class="combat-tip">A to attack · B to block · Esc to pause</div>`;
     }
     if (game.state === 'over') overlayCard.innerHTML = `<span class="overlay-kicker">RUN OVER</span><h2>Deep enough?</h2><p>You reached floor ${game.floor} and defeated ${game.kills} monster${game.kills === 1 ? '' : 's'}.</p><div class="result-number">FLOOR ${String(game.floor).padStart(2, '0')}</div><div class="overlay-actions">${button('Try again', 'restart')}</div>`;
   }
@@ -214,29 +280,92 @@
   }
 
   function draw() {
+    if (!game) return;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.imageSmoothingEnabled = false;
     ctx.fillStyle = '#0c161e'; ctx.fillRect(0, 0, 600, 600);
     for (let y = 0; y < W; y++) for (let x = 0; x < W; x++) {
       const px = x * TILE, py = y * TILE;
       const seen = game.seen.has(key(x, y));
-      if (!seen) { ctx.fillStyle = game.map[y][x] ? '#1b2b34' : '#101b24'; ctx.fillRect(px, py, TILE, TILE); ctx.strokeStyle = '#16252d'; ctx.strokeRect(px + .5, py + .5, TILE - 1, TILE - 1); continue; }
-      if (game.map[y][x]) {
-        ctx.fillStyle = (x + y) % 2 ? '#293a43' : '#2c3e47';
-        ctx.fillRect(px, py, TILE, TILE);
-        ctx.fillStyle = '#344851';
-        ctx.fillRect(px + 4, py + 4, 3, 3);
-        ctx.fillRect(px + 28, py + 27, 4, 2);
-        ctx.strokeStyle = '#23323b'; ctx.strokeRect(px + .5, py + .5, TILE - 1, TILE - 1);
-      } else {
-        ctx.fillStyle = '#17252e'; ctx.fillRect(px, py, TILE, TILE);
-        if ((x * 7 + y * 11) % 3 === 0) { ctx.fillStyle = '#21333e'; ctx.fillRect(px + 4, py + 5, 25, 4); ctx.fillRect(px + 12, py + 21, 24, 4); }
-        ctx.fillStyle = '#0e1b23'; ctx.fillRect(px, py + 34, TILE, 6);
-      }
+      const kind = game.map[y][x] ? 'floor' : 'wall';
+      const variant = (x * 7 + y * 11) % 3;
+      const tile = environment[`${kind}-${variant}`];
+      if (tile.complete && tile.naturalWidth) ctx.drawImage(tile, px, py, TILE, TILE);
+      else { ctx.fillStyle = kind === 'floor' ? '#35414a' : '#29333b'; ctx.fillRect(px, py, TILE, TILE); }
+      ctx.fillStyle = seen ? '#0c1b224d' : '#08131ad1';
+      ctx.fillRect(px, py, TILE, TILE);
+      ctx.strokeStyle = seen ? '#17283288' : '#10202988';
+      ctx.strokeRect(px + .5, py + .5, TILE - 1, TILE - 1);
     }
-    if (game.seen.has(key(game.exit.x, game.exit.y))) drawStairs(game.exit.x, game.exit.y, game.bossDefeated);
-    game.potions.forEach(p => { if (game.seen.has(key(p.x, p.y))) drawPotion(p.x, p.y); });
-    game.monsters.forEach(m => { if (game.seen.has(key(m.x, m.y))) drawMonster(m); });
-    drawPlayer(game.player.x, game.player.y);
+    const frame = Math.floor(animationTime / 210) % 4;
+    if (game.seen.has(key(game.exit.x, game.exit.y))) {
+      if (sprites.stairs.complete && sprites.stairs.naturalWidth) {
+        drawSprite(ctx, 'stairs', game.exit.x * TILE, game.exit.y * TILE, game.bossDefeated ? 0 : 3, frame, TILE);
+        if (!game.bossDefeated) { ctx.fillStyle = '#a54d4d66'; ctx.fillRect(game.exit.x * TILE + 4, game.exit.y * TILE + 4, 32, 32); }
+      } else drawStairs(game.exit.x, game.exit.y, game.bossDefeated);
+    }
+    game.potions.forEach(p => { if (game.seen.has(key(p.x, p.y))) {
+      if (sprites.potion.complete && sprites.potion.naturalWidth) drawSprite(ctx, 'potion', p.x * TILE, p.y * TILE, 0, frame, TILE);
+      else drawPotion(p.x, p.y);
+    } });
+    game.monsters.forEach(m => { if (game.seen.has(key(m.x, m.y))) {
+      const sprite = spriteFor(m.name);
+      if (sprites[sprite]?.complete && sprites[sprite].naturalWidth) drawSprite(ctx, sprite, m.renderX * TILE, m.renderY * TILE, entityState(m), entityFrame(m, frame), TILE);
+      else drawMonster(m);
+    } });
+    if (sprites.hero.complete && sprites.hero.naturalWidth) drawSprite(ctx, 'hero', game.player.renderX * TILE, game.player.renderY * TILE, entityState(game.player), entityFrame(game.player, frame), TILE);
+    else drawPlayer(game.player.x, game.player.y);
+    drawBattleStage(frame);
+  }
+
+  function entityState(entity) {
+    if (entity.attackAt !== undefined && animationTime >= entity.attackAt && animationTime - entity.attackAt < 520) return 2;
+    if (entity.hurtAt !== undefined && animationTime >= entity.hurtAt && animationTime - entity.hurtAt < 320) return 3;
+    if (Math.abs(entity.renderX - entity.x) + Math.abs(entity.renderY - entity.y) > .04) return 1;
+    return 0;
+  }
+
+  function entityFrame(entity, idleFrame) {
+    if (entityState(entity) === 2) return Math.min(3, Math.floor((animationTime - entity.attackAt) / 130));
+    return idleFrame;
+  }
+
+  function drawSprite(target, name, x, y, state, frame, size) {
+    target.imageSmoothingEnabled = false;
+    target.drawImage(sprites[name], frame * 32, state * 32, 32, 32, Math.round(x), Math.round(y), size, size);
+  }
+
+  function drawBattleStage(frame) {
+    const stage = $('combatStage');
+    if (!stage || !game.combat || game.state !== 'combat') return;
+    const battle = stage.getContext('2d');
+    battle.clearRect(0, 0, stage.width, stage.height);
+    battle.fillStyle = '#13232d'; battle.fillRect(0, 0, stage.width, stage.height);
+    battle.fillStyle = '#27404b'; battle.fillRect(0, 72, stage.width, 24);
+    const monster = game.combat.monster;
+    const playerState = entityState(game.player), monsterState = entityState(monster);
+    const playerLunge = playerState === 2 ? [0,10,15,4][entityFrame(game.player, frame)] : 0;
+    const monsterLunge = monsterState === 2 ? [0,-10,-18,-5][entityFrame(monster, frame)] : 0;
+    if (sprites.hero.complete && sprites.hero.naturalWidth) drawSprite(battle, 'hero', 37 + playerLunge, 12, playerState, entityFrame(game.player, frame), 72);
+    const name = spriteFor(monster.name);
+    if (sprites[name]?.complete && sprites[name].naturalWidth) drawSprite(battle, name, 207 + monsterLunge, 12, monsterState, entityFrame(monster, frame), 72);
+    if (monsterState === 2 && entityFrame(monster, frame) === 2) { battle.fillStyle = '#f7c77a99'; battle.fillRect(152, 38, 38, 7); }
+  }
+
+  function animate(timestamp) {
+    const delta = lastFrame ? Math.min(50, timestamp - lastFrame) : 16;
+    lastFrame = timestamp;
+    if (game && game.state !== 'paused') {
+      animationTime += delta;
+      const slide = Math.min(1, delta / 90);
+      const entities = [game.player, ...game.monsters];
+      for (const entity of entities) {
+        entity.renderX += (entity.x - entity.renderX) * slide;
+        entity.renderY += (entity.y - entity.renderY) * slide;
+      }
+      draw();
+    }
+    requestAnimationFrame(animate);
   }
 
   function drawStairs(x, y, open) {
@@ -294,4 +423,5 @@
     else if (action === 'attack' || action === 'block') fight(action);
   });
   newRun();
+  requestAnimationFrame(animate);
 })();

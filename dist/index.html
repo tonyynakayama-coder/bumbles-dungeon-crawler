@@ -40,24 +40,26 @@
           </div>
         </div>
         <div class="board-footer"><span><i class="legend-player"></i> YOU</span><span><i class="legend-monster"></i> MONSTER</span><span><i class="legend-potion"></i> HEALTH</span><span><i class="legend-stairs"></i> STAIRS</span></div>
+        <div class="board-controls">
+          <div class="controls-caption">MOVE <span>WASD / ARROW KEYS</span></div>
+          <div class="dpad" aria-label="Movement controls">
+            <button type="button" data-move="up" aria-label="Move up">↑</button>
+            <button type="button" data-move="left" aria-label="Move left">←</button>
+            <button type="button" data-move="down" aria-label="Move down">↓</button>
+            <button type="button" data-move="right" aria-label="Move right">→</button>
+          </div>
+        </div>
       </section>
 
       <aside class="side-panel action-panel" aria-label="Controls and events">
         <div class="eyebrow">HOW TO PLAY</div>
-        <p class="help-copy">Move through the dungeon. Bump into monsters to fight. Reach the stairs to go deeper.</p>
-        <div class="controls-caption">MOVE <span>WASD / ARROW KEYS</span></div>
-        <div class="dpad" aria-label="Movement controls">
-          <button type="button" data-move="up" aria-label="Move up">↑</button>
-          <button type="button" data-move="left" aria-label="Move left">←</button>
-          <button type="button" data-move="down" aria-label="Move down">↓</button>
-          <button type="button" data-move="right" aria-label="Move right">→</button>
-        </div>
+        <p class="help-copy">Nearby monsters follow you through the halls. Fight them, then reach the stairs to go deeper.</p>
         <div class="divider"></div>
         <div class="eyebrow">LATEST EVENTS</div>
         <div class="event-log" id="eventLog" aria-live="polite"></div>
       </aside>
     </main>
-    <footer class="site-footer"><span>ONE MORE FLOOR?</span><span>TAKE YOUR TIME. PAUSE ANYTIME.</span></footer>
+    <footer class="site-footer"><span>ONE MORE FLOOR?</span><a href="https://opengameart.org/content/dungeon-crawl-32x32-tiles" target="_blank" rel="noopener noreferrer">ART: DUNGEON CRAWL TILES · CC0</a></footer>
   </div>
 </body>
 </html>
