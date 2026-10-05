@@ -1,5 +1,11 @@
 # Game art
 
-Entity and environment tiles in `dist/oga/` come from [Dungeon Crawl 32x32 tiles](https://opengameart.org/content/dungeon-crawl-32x32-tiles), maintained by Chris Hamons and submitted to OpenGameArt by MedicineStorm. The collection is [CC0](https://creativecommons.org/publicdomain/zero/1.0/). Credit is not required; the game links to the source as a courtesy.
+The dungeon floor and wall tiles use Buch's [Dungeon tileset](https://opengameart.org/content/dungeon-tileset), licensed [CC0](https://creativecommons.org/publicdomain/zero/1.0/). The game draws selected regions from the original `dist/environment/buch-dungeon.png` atlas.
 
-The selected original 32×32 PNG tiles are used for the hero, red jelly, cave bat, iron imp, royal jelly, sun demon, ancient lich, healing potion, stairs, stone floors, and brick walls. `tools/generate-sprites.js` builds four animation rows (idle, walk, attack, hurt) from the entity tiles. The generated sheets are in `dist/sprites/`.
+Wall torches use Hyptosis's [Lots of free 2d tiles and sprites](https://opengameart.org/content/lots-of-free-2d-tiles-and-sprites-by-hyptosis), submitted by Zabin, licensed [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/). The game draws a torch region from `dist/environment/hyptosis-batch-1.png`. Credit: Hyptosis and Zabin. We do not use Zabin's bomb animation frames.
+
+Wall crystals use [Kyrise's Free 16x16 RPG Icon Pack](https://opengameart.org/content/kyrises-free-16x16-rpg-icon-pack), licensed [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Credit: Kyrise, https://kyrise.itch.io/. `dist/environment/kyrise-crystal.png` is the original `crystal_01a.png` file from version 1.2 of the pack.
+
+The hero, monsters, healing potion, and stairs in `dist/oga/` and their generated animated sheets in `dist/sprites/` come from [Dungeon Crawl 32x32 tiles](https://opengameart.org/content/dungeon-crawl-32x32-tiles), maintained by Chris Hamons and submitted to OpenGameArt by MedicineStorm, licensed [CC0](https://creativecommons.org/publicdomain/zero/1.0/). `tools/generate-sprites.js` builds idle, walk, attack, and hurt animation rows from those source tiles.
+
+The asset selections are credited to players on `dist/credits.html`.

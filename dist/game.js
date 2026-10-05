@@ -21,8 +21,8 @@
     return [name, image];
   }));
   const spriteFor = name => ({ 'Red jelly': 'red-jelly', 'Cave bat': 'cave-bat', 'Iron imp': 'iron-imp', 'Royal jelly': 'royal-jelly', 'Sun demon': 'sun-demon', 'Ancient lich': 'ancient-lich' })[name];
-  const environment = Object.fromEntries(['floor-0','floor-1','floor-2','wall-0','wall-1','wall-2'].map(name => {
-    const image = new Image(); image.src = `./oga/${name}.png`;
+  const environment = Object.fromEntries(['buch-dungeon', 'hyptosis-batch-1', 'kyrise-crystal'].map(name => {
+    const image = new Image(); image.src = `./environment/${name}.png`;
     image.onload = () => { if (game) draw(); };
     return [name, image];
   }));
@@ -287,14 +287,27 @@
     for (let y = 0; y < W; y++) for (let x = 0; x < W; x++) {
       const px = x * TILE, py = y * TILE;
       const seen = game.seen.has(key(x, y));
-      const kind = game.map[y][x] ? 'floor' : 'wall';
+      const isFloor = !!game.map[y][x];
       const variant = (x * 7 + y * 11) % 3;
-      const tile = environment[`${kind}-${variant}`];
-      if (tile.complete && tile.naturalWidth) ctx.drawImage(tile, px, py, TILE, TILE);
-      else { ctx.fillStyle = kind === 'floor' ? '#35414a' : '#29333b'; ctx.fillRect(px, py, TILE, TILE); }
-      ctx.fillStyle = seen ? '#0c1b224d' : '#08131ad1';
+      const atlas = environment['buch-dungeon'];
+      if (atlas.complete && atlas.naturalWidth) {
+        const source = isFloor
+          ? [[48, 48, 16, 16], [64, 48, 16, 16], [48, 80, 16, 16]][variant]
+          : [[48, 160, 32, 32], [48, 176, 32, 32], [48, 264, 32, 32]][variant];
+        ctx.drawImage(atlas, ...source, px, py, TILE, TILE);
+      } else { ctx.fillStyle = isFloor ? '#35414a' : '#29333b'; ctx.fillRect(px, py, TILE, TILE); }
+      if (seen && !isFloor && [directions.up, directions.down, directions.left, directions.right].some(([dx, dy]) => game.map[y + dy]?.[x + dx])) {
+        if ((x * 17 + y * 23) % 13 === 0) {
+          const props = environment['hyptosis-batch-1'];
+          if (props.complete && props.naturalWidth) ctx.drawImage(props, 192, 896, 32, 32, px + 5, py + 4, TILE - 10, TILE - 8);
+        } else if ((x * 13 + y * 7) % 17 === 0) {
+          const crystal = environment['kyrise-crystal'];
+          if (crystal.complete && crystal.naturalWidth) ctx.drawImage(crystal, px + 10, py + 11, TILE - 20, TILE - 20);
+        }
+      }
+      ctx.fillStyle = seen ? '#0c1b2229' : '#08131adf';
       ctx.fillRect(px, py, TILE, TILE);
-      ctx.strokeStyle = seen ? '#17283288' : '#10202988';
+      ctx.strokeStyle = seen ? '#17283255' : '#10202988';
       ctx.strokeRect(px + .5, py + .5, TILE - 1, TILE - 1);
     }
     const frame = Math.floor(animationTime / 210) % 4;
