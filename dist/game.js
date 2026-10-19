@@ -39,11 +39,17 @@
   let animationTime = 0;
   let lastFrame = 0;
   let enemyClock = 0;
+  let movementClock = 0;
+  const heldKeys = new Set();
+  let joystickDirection = null;
+  let joystickPointer = null;
+  let attackHeld = false;
   let game;
 
   function newRun() {
-    game = { floor: 1, hp: 24, maxHp: 24, weapon: 0, armor: 0, weaponName: 'Bare hands', kills: 0, bosses: 0, turns: 0, state: 'start', pausedFrom: null, combat: null, log: [] };
+    game = { floor: 1, hp: 24, maxHp: 24, weapon: 0, armor: 0, weaponName: 'Bare hands', kills: 0, bosses: 0, turns: 0, state: 'start', pausedFrom: null, facing: 'down', blocking: false, nextAttackAt: 0, log: [] };
     enemyClock = 0;
+    movementClock = 0;
     makeFloor();
     addLog('A new descent begins.');
     sync();
@@ -128,12 +134,6 @@
     game.log = game.log.slice(0, 4);
   }
 
-  function startCombat(monster, initiatedByEnemy = false) {
-    game.combat = { monster, target: { x: monster.x, y: monster.y }, initiatedByEnemy, message: initiatedByEnemy ? `${monster.name} spotted you!` : `${monster.name} blocks your path.` };
-    game.state = 'combat';
-    addLog(initiatedByEnemy ? `${monster.name} caught up to you!` : `Encountered ${monster.name}!`);
-  }
-
   // Breadth-first search follows corridors and avoids other monsters.
   // The path length is the detection range, so walls can break pursuit.
   function pathToPlayer(monster, range = 6) {
@@ -167,10 +167,9 @@
     for (const monster of game.monsters) {
       const step = pathToPlayer(monster);
       if (step) {
-        if (step.length === 1) { startCombat(monster, true); return; }
+        if (step.length === 1) continue;
         monster.x = step.x;
         monster.y = step.y;
-        if (dist(monster, game.player) === 1) { startCombat(monster, true); return; }
       } else if (Math.random() < .42) {
         const choices = Object.values(directions)
           .map(([dx, dy]) => ({ x: monster.x + dx, y: monster.y + dy }))
@@ -205,14 +204,11 @@
 
   function move(dx, dy) {
     if (game.state !== 'playing') return;
+    game.facing = Object.keys(directions).find(direction => directions[direction][0] === dx && directions[direction][1] === dy) || game.facing;
     const x = game.player.x + dx, y = game.player.y + dy;
     if (x < 0 || y < 0 || x >= W || y >= W || !game.map[y][x]) return;
     const monster = game.monsters.find(m => m.x === x && m.y === y);
-    if (monster) {
-      startCombat(monster);
-      sync();
-      return;
-    }
+    if (monster) return;
     game.player.x = x;
     game.player.y = y;
     game.turns++;
@@ -241,61 +237,60 @@
     sync();
   }
 
-  function fight(action) {
-    if (game.state !== 'combat') return;
-    const monster = game.combat.monster;
-    game.turns++;
+  function attack() {
+    if (game.state !== 'playing' || animationTime < game.nextAttackAt) return;
+    game.nextAttackAt = animationTime + 430;
     game.player.attackAt = animationTime;
-    monster.hurtAt = animationTime + 130;
-    let message;
-    if (action === 'attack') {
-      const critical = Math.random() < .16;
-      const damage = rand(5, 8) + game.weapon + Math.floor((game.floor - 1) / 2) + (critical ? 3 : 0);
-      monster.hp = Math.max(0, monster.hp - damage);
-      message = `${critical ? 'Critical hit! ' : ''}You deal ${damage} damage.`;
-    } else {
-      const damage = 2 + Math.floor(game.floor / 3);
-      monster.hp = Math.max(0, monster.hp - damage);
-      message = `You block and counter for ${damage}.`;
-    }
+    const [fx, fy] = directions[game.facing];
+    const adjacent = game.monsters.filter(monster => dist(monster, game.player) === 1);
+    const monster = adjacent.find(monster => monster.x === game.player.x + fx && monster.y === game.player.y + fy) || adjacent[0];
+    if (!monster) { draw(); return; }
+    monster.hurtAt = animationTime + 80;
+    const critical = Math.random() < .16;
+    const damage = rand(5, 8) + game.weapon + Math.floor((game.floor - 1) / 2) + (critical ? 3 : 0);
+    monster.hp = Math.max(0, monster.hp - damage);
+    let message = `${critical ? 'Critical hit! ' : ''}You deal ${damage} damage.`;
     if (monster.hp <= 0) {
       game.monsters = game.monsters.filter(m => m !== monster);
-      if (!game.combat.initiatedByEnemy) {
-        game.player.x = game.combat.target.x;
-        game.player.y = game.combat.target.y;
-        collectLoot(game.player.x, game.player.y);
-      }
-      reveal();
       game.kills++;
       if (monster.boss) {
         game.bosses++;
         game.bossDefeated = true;
         message += ' Boss defeated! The stairs open.';
       } else message += ` ${monster.name} falls.`;
-      addLog(message);
-      game.combat = null;
-      game.state = 'playing';
-      sync();
-      return;
     }
-    const incoming = Math.max(1, monster.damage + rand(0, 2) - game.armor - (action === 'block' ? monster.damage : 0));
-    monster.attackAt = animationTime + 260;
-    game.player.hurtAt = animationTime + 430;
-    game.hp = Math.max(0, game.hp - incoming);
-    message += ` ${monster.name} hits for ${incoming}.`;
     addLog(message);
-    game.combat.message = message;
-    if (game.hp <= 0) {
-      game.state = 'over';
-      addLog(`Run over on floor ${game.floor}.`);
-    }
     sync();
+  }
+
+  function enemyAttacks() {
+    for (const monster of game.monsters) {
+      if (dist(monster, game.player) !== 1) { monster.inRange = false; continue; }
+      if (!monster.inRange) {
+        monster.inRange = true;
+        monster.nextAttackAt = animationTime + 650;
+      }
+      if (animationTime < monster.nextAttackAt) continue;
+      monster.nextAttackAt = animationTime + (monster.boss ? 1050 : 1450);
+      monster.attackAt = animationTime;
+      const incoming = Math.max(0, monster.damage + rand(0, 2) - game.armor - (game.blocking ? 4 : 0));
+      game.hp = Math.max(0, game.hp - incoming);
+      if (incoming) game.player.hurtAt = animationTime + 110;
+      addLog(incoming ? `${monster.name} hits for ${incoming}.` : `Blocked ${monster.name}'s attack!`);
+      if (game.hp <= 0) {
+        game.state = 'over';
+        addLog(`Run over on floor ${game.floor}.`);
+        clearInputs();
+      }
+      sync();
+      if (game.state === 'over') return;
+    }
   }
 
   function togglePause() {
     if (game.state === 'start' || game.state === 'over') return;
     if (game.state === 'paused') game.state = game.pausedFrom;
-    else { game.pausedFrom = game.state; game.state = 'paused'; }
+    else { game.pausedFrom = game.state; game.state = 'paused'; clearInputs(); }
     sync();
   }
 
@@ -304,13 +299,8 @@
   function renderOverlay() {
     overlay.classList.toggle('hidden', game.state === 'playing');
     if (game.state === 'playing') return;
-    if (game.state === 'start') overlayCard.innerHTML = `<span class="overlay-kicker">A QUICK DUNGEON RUN</span><h1>Enter the dungeon</h1><p>Move with arrows or WASD. Monsters move even when you wait. Collect gear and chests, fight or block, then find the stairs.</p><div class="overlay-actions">${button('Start exploring', 'start')}</div>`;
+    if (game.state === 'start') overlayCard.innerHTML = `<span class="overlay-kicker">A QUICK DUNGEON RUN</span><h1>Enter the dungeon</h1><p>Use the left joystick or WASD to move. Attack nearby monsters at any time; hold Block when they strike. Find gear and the stairs.</p><div class="overlay-actions">${button('Start exploring', 'start')}</div>`;
     if (game.state === 'paused') overlayCard.innerHTML = `<span class="overlay-kicker">TAKE A BREATHER</span><h2>Paused</h2><p>Your run is waiting right here.</p><div class="overlay-actions">${button('Resume run', 'resume')}</div>`;
-    if (game.state === 'combat') {
-      const monster = game.combat.monster;
-      const segments = Math.ceil(monster.hp / monster.maxHp * 8);
-      overlayCard.innerHTML = `<span class="overlay-kicker">MONSTER ENCOUNTER</span><h2>${monster.name}</h2><canvas class="combat-stage" id="combatStage" width="320" height="96" role="img" aria-label="Animated battle with ${monster.name}"></canvas><div class="battle-stat">${monster.hp} / ${monster.maxHp} HP</div><div class="battle-bars">${Array.from({length: 8}, (_, i) => `<i class="${i >= segments ? 'empty' : ''}"></i>`).join('')}</div><p>${game.combat.message}</p><div class="overlay-actions">${button('⚔ Attack', 'attack')}${button('▣ Block', 'block', 'secondary')}</div><div class="combat-tip">A to attack · B to block · Esc to pause</div>`;
-    }
     if (game.state === 'over') overlayCard.innerHTML = `<span class="overlay-kicker">RUN OVER</span><h2>Deep enough?</h2><p>You reached floor ${game.floor} and defeated ${game.kills} monster${game.kills === 1 ? '' : 's'}.</p><div class="result-number">FLOOR ${String(game.floor).padStart(2, '0')}</div><div class="overlay-actions">${button('Try again', 'restart')}</div>`;
   }
 
@@ -330,6 +320,8 @@
     $('goalDetail').textContent = game.bossDefeated ? 'Step onto the blue stairs to descend.' : 'The stairs open after the boss falls.';
     $('eventLog').replaceChildren(...game.log.map(message => { const el = document.createElement('div'); el.className = 'event'; el.textContent = message; return el; }));
     $('pauseButton').innerHTML = game.state === 'paused' ? '▶ <span>Resume</span>' : 'Ⅱ <span>Pause</span>';
+    $('blockButton').setAttribute('aria-pressed', String(game.blocking));
+    $('blockButton').classList.toggle('active', game.blocking);
     renderOverlay();
     draw();
   }
@@ -389,10 +381,25 @@
       const sprite = monsterArt[spriteFor(m.name)];
       if (sprite?.complete && sprite.naturalWidth) drawMonsterArt(ctx, m, m.renderX * TILE, m.renderY * TILE, TILE);
       else drawMonster(m);
+      if (m.hp < m.maxHp) {
+        ctx.fillStyle = '#18242b'; ctx.fillRect(m.renderX * TILE + 5, m.renderY * TILE + 2, 30, 4);
+        ctx.fillStyle = '#e97872'; ctx.fillRect(m.renderX * TILE + 5, m.renderY * TILE + 2, 30 * m.hp / m.maxHp, 4);
+      }
     } });
     if (sprites.hero.complete && sprites.hero.naturalWidth) drawSprite(ctx, 'hero', game.player.renderX * TILE, game.player.renderY * TILE, entityState(game.player), entityFrame(game.player, frame), TILE);
     else drawPlayer(game.player.x, game.player.y);
-    drawBattleStage(frame);
+    if (game.blocking) {
+      ctx.strokeStyle = '#a9dcf3'; ctx.lineWidth = 3;
+      ctx.strokeRect(game.player.renderX * TILE + 3, game.player.renderY * TILE + 3, TILE - 6, TILE - 6);
+      ctx.lineWidth = 1;
+    }
+    if (entityState(game.player) === 2) {
+      const [dx, dy] = directions[game.facing];
+      const px = game.player.renderX * TILE + TILE / 2 + dx * TILE * .75;
+      const py = game.player.renderY * TILE + TILE / 2 + dy * TILE * .75;
+      ctx.strokeStyle = '#f8d17b'; ctx.lineWidth = 5;
+      ctx.beginPath(); ctx.arc(px, py, 10, 0, Math.PI * 1.5); ctx.stroke(); ctx.lineWidth = 1;
+    }
   }
 
   function entityState(entity) {
@@ -416,26 +423,17 @@
     const art = monsterArt[spriteFor(monster.name)];
     const frames = Math.max(1, Math.floor(art.naturalWidth / 64));
     const frame = Math.floor(animationTime / 170 + monster.x + monster.y) % frames;
+    const striking = entityState(monster) === 2;
+    const lunge = striking ? Math.sin((animationTime - monster.attackAt) / 520 * Math.PI) * 8 : 0;
+    x += Math.sign(game.player.x - monster.x) * lunge;
+    y += Math.sign(game.player.y - monster.y) * lunge;
     target.imageSmoothingEnabled = false;
     target.drawImage(art, frame * 64, 0, 64, 64, Math.round(x), Math.round(y), size, size);
-  }
-
-  function drawBattleStage(frame) {
-    const stage = $('combatStage');
-    if (!stage || !game.combat || game.state !== 'combat') return;
-    const battle = stage.getContext('2d');
-    battle.clearRect(0, 0, stage.width, stage.height);
-    battle.fillStyle = '#13232d'; battle.fillRect(0, 0, stage.width, stage.height);
-    battle.fillStyle = '#27404b'; battle.fillRect(0, 72, stage.width, 24);
-    const monster = game.combat.monster;
-    const playerState = entityState(game.player), monsterState = entityState(monster);
-    const playerLunge = playerState === 2 ? [0,10,15,4][entityFrame(game.player, frame)] : 0;
-    const monsterLunge = monsterState === 2 ? [0,-10,-18,-5][entityFrame(monster, frame)] : 0;
-    if (sprites.hero.complete && sprites.hero.naturalWidth) drawSprite(battle, 'hero', 37 + playerLunge, 12, playerState, entityFrame(game.player, frame), 72);
-    const art = monsterArt[spriteFor(monster.name)];
-    if (art?.complete && art.naturalWidth) drawMonsterArt(battle, monster, 207 + monsterLunge, 12, 72);
-    else if (sprites[spriteFor(monster.name)]?.complete) drawSprite(battle, spriteFor(monster.name), 207 + monsterLunge, 12, monsterState, entityFrame(monster, frame), 72);
-    if (monsterState === 2 && entityFrame(monster, frame) === 2) { battle.fillStyle = '#f7c77a99'; battle.fillRect(152, 38, 38, 7); }
+    if (striking) {
+      target.strokeStyle = '#f5ab7d'; target.lineWidth = 2;
+      target.strokeRect(Math.round(x) + 4, Math.round(y) + 4, size - 8, size - 8);
+      target.lineWidth = 1;
+    }
   }
 
   function animate(timestamp) {
@@ -444,12 +442,19 @@
     if (game && game.state !== 'paused') {
       animationTime += delta;
       if (game.state === 'playing') {
+        if (attackHeld) attack();
         enemyClock += delta;
         if (enemyClock >= 950) {
           enemyClock -= 950;
           enemyTurn();
-          if (game.state === 'combat') sync();
         }
+        movementClock += delta;
+        if (movementClock >= 165) {
+          movementClock %= 165;
+          const direction = activeDirection();
+          if (direction) move(...directions[direction]);
+        }
+        enemyAttacks();
       }
       const slide = Math.min(1, delta / 90);
       const entities = [game.player, ...game.monsters];
@@ -498,23 +503,87 @@
     ctx.fillStyle = '#e49f4d'; ctx.fillRect(px + 14, py + 31, 5, 4); ctx.fillRect(px + 25, py + 31, 5, 4);
   }
 
+  const movementKeys = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right', w: 'up', s: 'down', a: 'left', d: 'right' };
+  function activeDirection() {
+    if (joystickDirection) return joystickDirection;
+    return Array.from(heldKeys).reverse().map(key => movementKeys[key]).find(Boolean) || null;
+  }
+
+  function setBlocking(value) {
+    if (!game || game.state !== 'playing') value = false;
+    game.blocking = value;
+    $('blockButton').setAttribute('aria-pressed', String(value));
+    $('blockButton').classList.toggle('active', value);
+    draw();
+  }
+
+  function clearInputs() {
+    heldKeys.clear();
+    joystickDirection = null;
+    joystickPointer = null;
+    attackHeld = false;
+    movementClock = 0;
+    $('joystickThumb').style.transform = 'translate(0, 0)';
+    setBlocking(false);
+  }
+
+  function updateJoystick(event) {
+    const rect = $('joystick').getBoundingClientRect();
+    const dx = event.clientX - (rect.left + rect.width / 2);
+    const dy = event.clientY - (rect.top + rect.height / 2);
+    const length = Math.hypot(dx, dy);
+    const scale = Math.min(1, 34 / (length || 1));
+    $('joystickThumb').style.transform = `translate(${dx * scale}px, ${dy * scale}px)`;
+    joystickDirection = length < 12 ? null : Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up');
+  }
+
+  const joystick = $('joystick');
+  joystick.addEventListener('pointerdown', event => {
+    if (game.state !== 'playing') return;
+    event.preventDefault();
+    joystickPointer = event.pointerId;
+    joystick.setPointerCapture(event.pointerId);
+    updateJoystick(event);
+    if (joystickDirection) move(...directions[joystickDirection]);
+    movementClock = 0;
+  });
+  joystick.addEventListener('pointermove', event => { if (event.pointerId === joystickPointer) updateJoystick(event); });
+  const releaseJoystick = event => {
+    if (event.pointerId !== joystickPointer) return;
+    joystickPointer = null;
+    joystickDirection = null;
+    $('joystickThumb').style.transform = 'translate(0, 0)';
+  };
+  joystick.addEventListener('pointerup', releaseJoystick);
+  joystick.addEventListener('pointercancel', releaseJoystick);
+  joystick.addEventListener('lostpointercapture', releaseJoystick);
+
+  $('attackButton').addEventListener('pointerdown', event => { event.preventDefault(); attackHeld = true; attack(); });
+  for (const name of ['pointerup', 'pointercancel', 'pointerleave']) $('attackButton').addEventListener(name, () => { attackHeld = false; });
+  $('blockButton').addEventListener('pointerdown', event => { event.preventDefault(); setBlocking(true); });
+  for (const name of ['pointerup', 'pointercancel', 'pointerleave']) $('blockButton').addEventListener(name, () => setBlocking(false));
   document.addEventListener('keydown', event => {
-    const movement = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right', w: 'up', s: 'down', a: 'left', d: 'right' };
     const k = event.key.length === 1 ? event.key.toLowerCase() : event.key;
-    if (k in movement && game.state === 'playing') { event.preventDefault(); move(...directions[movement[k]]); }
-    else if (k === 'Escape' && (game.state === 'playing' || game.state === 'combat' || game.state === 'paused')) { event.preventDefault(); togglePause(); }
-    else if (game.state === 'combat' && k === 'a') { event.preventDefault(); fight('attack'); }
-    else if (game.state === 'combat' && k === 'b') { event.preventDefault(); fight('block'); }
+    if (k in movementKeys && game.state === 'playing') {
+      event.preventDefault();
+      if (!heldKeys.has(k)) { heldKeys.add(k); move(...directions[movementKeys[k]]); movementClock = 0; }
+    } else if (k === 'Escape' && (game.state === 'playing' || game.state === 'paused')) { event.preventDefault(); togglePause(); }
+    else if ((k === ' ' || k === 'j') && game.state === 'playing') { event.preventDefault(); attackHeld = true; attack(); }
+    else if ((k === 'Shift' || k === 'k') && game.state === 'playing') { event.preventDefault(); setBlocking(true); }
     else if (k === 'Enter' && game.state === 'start') { event.preventDefault(); game.state = 'playing'; sync(); }
   });
-
-  document.querySelectorAll('[data-move]').forEach(button => button.addEventListener('click', () => move(...directions[button.dataset.move])));
+  document.addEventListener('keyup', event => {
+    const k = event.key.length === 1 ? event.key.toLowerCase() : event.key;
+    heldKeys.delete(k);
+    if (k === ' ' || k === 'j') attackHeld = false;
+    if (k === 'Shift' || k === 'k') setBlocking(false);
+  });
+  window.addEventListener('blur', clearInputs);
   $('pauseButton').addEventListener('click', togglePause);
   overlay.addEventListener('click', event => {
     const action = event.target.closest('[data-action]')?.dataset.action;
     if (action === 'start' || action === 'resume') { game.state = action === 'start' ? 'playing' : game.pausedFrom; sync(); }
     else if (action === 'restart') { newRun(); game.state = 'playing'; sync(); }
-    else if (action === 'attack' || action === 'block') fight(action);
   });
   newRun();
   requestAnimationFrame(animate);
