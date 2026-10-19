@@ -9,6 +9,12 @@
   const TILE = canvas.width / W;
   const directions = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] };
   const names = ['THE FIRST DESCENT', 'THE DAMP HALLS', 'THE HOLLOW KEEP', 'THE DEEP VAULT', 'THE BOSS FLOOR'];
+  const rarities = [
+    { name: 'Common', chance: .60, weapon: 2, armor: 1 },
+    { name: 'Rare', chance: .26, weapon: 4, armor: 2 },
+    { name: 'Epic', chance: .11, weapon: 7, armor: 4 },
+    { name: 'Legendary', chance: .03, weapon: 11, armor: 6 }
+  ];
   const $ = (id) => document.getElementById(id);
   const rand = (min, max) => min + Math.floor(Math.random() * (max - min + 1));
   const key = (x, y) => `${x},${y}`;
@@ -23,11 +29,6 @@
   const spriteFor = name => ({ 'Red jelly': 'red-jelly', 'Cave bat': 'cave-bat', 'Iron imp': 'iron-imp', 'Royal jelly': 'royal-jelly', 'Sun demon': 'sun-demon', 'Ancient lich': 'ancient-lich' })[name];
   const monsterArt = Object.fromEntries(['red-jelly', 'cave-bat', 'iron-imp', 'royal-jelly', 'sun-demon', 'ancient-lich'].map(name => {
     const image = new Image(); image.src = `./monsters/${name}.png`;
-    image.onload = () => { if (game) draw(); };
-    return [name, image];
-  }));
-  const lootArt = Object.fromEntries(['sword', 'axe', 'helmet', 'chest'].map(name => {
-    const image = new Image(); image.src = `./loot/${name}.png`;
     image.onload = () => { if (game) draw(); };
     return [name, image];
   }));
@@ -47,7 +48,7 @@
   let game;
 
   function newRun() {
-    game = { floor: 1, hp: 24, maxHp: 24, weapon: 0, armor: 0, weaponName: 'Bare hands', kills: 0, bosses: 0, turns: 0, state: 'start', pausedFrom: null, facing: 'down', blocking: false, nextAttackAt: 0, log: [] };
+    game = { floor: 1, hp: 24, maxHp: 24, weapon: 0, armor: 0, weaponName: 'Bare hands', armorName: 'No armor', weaponArt: 'sword', reward: null, kills: 0, bosses: 0, turns: 0, state: 'start', pausedFrom: null, facing: 'down', blocking: false, nextAttackAt: 0, log: [] };
     enemyClock = 0;
     movementClock = 0;
     makeFloor();
@@ -106,17 +107,11 @@
     }
     const potions = [];
     for (let i = 0; i < 2; i++) { const tile = pick(3); if (tile) potions.push(tile); }
-    const loot = [];
-    for (const kind of ['weapon', 'armor', 'chest']) {
-      const tile = pick(2) || pick();
-      if (tile) loot.push({ ...tile, kind, art: kind === 'weapon' ? (game.floor % 2 ? 'sword' : 'axe') : kind === 'armor' ? 'helmet' : 'chest' });
-    }
     game.map = grid;
     game.player = { ...start, renderX: start.x, renderY: start.y };
     game.exit = exit;
     game.monsters = monsters;
     game.potions = potions;
-    game.loot = loot;
     game.bossDefeated = !bossFloor;
     enemyClock = 0;
     game.seen = new Set();
@@ -183,23 +178,46 @@
     }
   }
 
-  function collectLoot(x, y) {
-    const index = game.loot.findIndex(item => item.x === x && item.y === y);
-    if (index < 0) return;
-    const [item] = game.loot.splice(index, 1);
-    if (item.kind === 'weapon') {
-      game.weapon += 2;
-      game.weaponName = item.art === 'axe' ? 'Battle axe' : 'Sword';
-      addLog(`${game.weaponName} found! Attack +${game.weapon}.`);
-    } else if (item.kind === 'armor') {
-      game.armor++;
-      addLog(`Armor equipped! Defense +${game.armor}.`);
-    } else {
-      const reward = rand(0, 2);
-      if (reward === 0) { game.weapon++; addLog('Chest opened! Your weapon gains +1 attack.'); }
-      else if (reward === 1) { game.armor++; addLog('Chest opened! Your armor gains +1 defense.'); }
-      else { const healed = Math.min(game.maxHp - game.hp, 10); game.hp += healed; addLog(`Chest opened! Restored ${healed} health.`); }
+  function rollRarity() {
+    const roll = Math.random();
+    let total = 0;
+    return rarities.find(rarity => (total += rarity.chance) > roll) || rarities[0];
+  }
+
+  function rollGear(kind) {
+    const rarity = rollRarity();
+    const isWeapon = kind === 'weapon';
+    const art = isWeapon ? (Math.random() < .5 ? 'sword' : 'axe') : 'helmet';
+    const power = rarity[kind] + Math.floor((game.floor - 1) / (isWeapon ? 4 : 6));
+    return { kind, rarity: rarity.name, name: `${rarity.name} ${isWeapon ? art === 'axe' ? 'Battle axe' : 'Sword' : 'Armor'}`, power, art, equipped: false };
+  }
+
+  function finishFloor() {
+    clearInputs();
+    game.state = 'loot';
+    game.reward = { floor: game.floor, opened: false, items: [] };
+    addLog(`Floor ${game.floor} cleared. Your loot box is ready!`);
+    sync();
+  }
+
+  function openLootBox() {
+    if (game.state !== 'loot' || game.reward.opened) return;
+    game.reward.opened = true;
+    game.reward.items = [rollGear('weapon'), rollGear('armor')];
+    for (const item of game.reward.items) {
+      if (item.kind === 'weapon' && item.power > game.weapon) {
+        game.weapon = item.power;
+        game.weaponName = item.name;
+        game.weaponArt = item.art;
+        item.equipped = true;
+      } else if (item.kind === 'armor' && item.power > game.armor) {
+        game.armor = item.power;
+        game.armorName = item.name;
+        item.equipped = true;
+      }
     }
+    addLog('Loot box opened. Stronger gear equipped.');
+    sync();
   }
 
   function move(dx, dy) {
@@ -220,19 +238,21 @@
       game.hp += healed;
       addLog(healed ? `Found a potion. +${healed} health.` : 'Found a potion. Health is full.');
     }
-    collectLoot(x, y);
     if (x === game.exit.x && y === game.exit.y) {
       if (!game.bossDefeated) addLog('The stairs are sealed. Defeat the boss!');
-      else { descend(); return; }
+      else { finishFloor(); return; }
     }
     sync();
   }
 
   function descend() {
+    if (game.state !== 'loot' || !game.reward?.opened) return;
     game.floor++;
     game.maxHp += 2;
     game.hp = Math.min(game.maxHp, game.hp + 9);
     makeFloor();
+    game.reward = null;
+    game.state = 'playing';
     addLog(`Floor ${game.floor}. You catch your breath.`);
     sync();
   }
@@ -288,7 +308,7 @@
   }
 
   function togglePause() {
-    if (game.state === 'start' || game.state === 'over') return;
+    if (game.state === 'start' || game.state === 'over' || game.state === 'loot') return;
     if (game.state === 'paused') game.state = game.pausedFrom;
     else { game.pausedFrom = game.state; game.state = 'paused'; clearInputs(); }
     sync();
@@ -299,7 +319,13 @@
   function renderOverlay() {
     overlay.classList.toggle('hidden', game.state === 'playing');
     if (game.state === 'playing') return;
-    if (game.state === 'start') overlayCard.innerHTML = `<span class="overlay-kicker">A QUICK DUNGEON RUN</span><h1>Enter the dungeon</h1><p>Use the left joystick or WASD to move. Attack nearby monsters at any time; hold Block when they strike. Find gear and the stairs.</p><div class="overlay-actions">${button('Start exploring', 'start')}</div>`;
+    if (game.state === 'start') overlayCard.innerHTML = `<span class="overlay-kicker">A QUICK DUNGEON RUN</span><h1>Enter the dungeon</h1><p>Move with the joystick or WASD. Attack nearby monsters, hold Block to defend, and reach the stairs for a loot box.</p><div class="overlay-actions">${button('Start exploring', 'start')}</div>`;
+    if (game.state === 'loot') {
+      const reward = game.reward;
+      overlayCard.innerHTML = reward.opened
+        ? `<span class="overlay-kicker">FLOOR ${reward.floor} CLEARED</span><h2>Loot box opened!</h2><div class="loot-results">${reward.items.map(item => `<div class="loot-result ${item.rarity.toLowerCase()}"><img src="./loot/${item.art}.png" alt=""><div><small>${item.rarity.toUpperCase()} ${item.kind.toUpperCase()}</small><strong>${item.name}</strong><span>+${item.power} ${item.kind === 'weapon' ? 'ATK' : 'DEF'} · ${item.equipped ? 'Equipped' : 'Current gear is stronger'}</span></div></div>`).join('')}</div><div class="overlay-actions">${button('Next floor →', 'continue')}</div>`
+        : `<span class="overlay-kicker">FLOOR ${reward.floor} CLEARED</span><h2>Your loot box awaits</h2><img class="loot-chest" src="./loot/chest.png" alt="Treasure chest"><p>Open it for a weapon and armor. Rare, Epic, and Legendary finds are harder to roll.</p><div class="overlay-actions">${button('Open loot box', 'open-loot')}</div>`;
+    }
     if (game.state === 'paused') overlayCard.innerHTML = `<span class="overlay-kicker">TAKE A BREATHER</span><h2>Paused</h2><p>Your run is waiting right here.</p><div class="overlay-actions">${button('Resume run', 'resume')}</div>`;
     if (game.state === 'over') overlayCard.innerHTML = `<span class="overlay-kicker">RUN OVER</span><h2>Deep enough?</h2><p>You reached floor ${game.floor} and defeated ${game.kills} monster${game.kills === 1 ? '' : 's'}.</p><div class="result-number">FLOOR ${String(game.floor).padStart(2, '0')}</div><div class="overlay-actions">${button('Try again', 'restart')}</div>`;
   }
@@ -312,9 +338,10 @@
     $('bossesValue').textContent = game.bosses;
     $('turnLabel').textContent = `STEPS ${String(game.turns).padStart(2, '0')}`;
     $('weaponName').textContent = game.weaponName;
+    $('armorName').textContent = game.armorName;
     $('weaponPower').textContent = `+${game.weapon} ATK`;
     $('armorPower').textContent = `+${game.armor} DEF`;
-    $('weaponIcon').src = `./loot/${game.weaponName === 'Battle axe' ? 'axe' : 'sword'}.png`;
+    $('weaponIcon').src = `./loot/${game.weaponArt}.png`;
     $('floorLabel').textContent = game.floor % 5 === 0 ? `FLOOR ${game.floor} · BOSS LAIR` : (names[(game.floor - 1) % names.length] || `FLOOR ${game.floor}`);
     $('goalText').textContent = game.bossDefeated ? 'Find the stairs' : 'Defeat the boss';
     $('goalDetail').textContent = game.bossDefeated ? 'Step onto the blue stairs to descend.' : 'The stairs open after the boss falls.';
@@ -368,15 +395,6 @@
       if (sprites.potion.complete && sprites.potion.naturalWidth) drawSprite(ctx, 'potion', p.x * TILE, p.y * TILE, 0, frame, TILE);
       else drawPotion(p.x, p.y);
     } });
-    game.loot.forEach(item => {
-      if (!game.seen.has(key(item.x, item.y))) return;
-      const art = lootArt[item.art];
-      const px = item.x * TILE, py = item.y * TILE;
-      if (art.complete && art.naturalWidth) ctx.drawImage(art, px + 4, py + 4, TILE - 8, TILE - 8);
-      if (item.kind === 'chest') {
-        ctx.fillStyle = '#f5c66b'; ctx.fillRect(px + 17, py + 17, 6, 6);
-      }
-    });
     game.monsters.forEach(m => { if (game.seen.has(key(m.x, m.y))) {
       const sprite = monsterArt[spriteFor(m.name)];
       if (sprite?.complete && sprite.naturalWidth) drawMonsterArt(ctx, m, m.renderX * TILE, m.renderY * TILE, TILE);
@@ -400,6 +418,20 @@
       ctx.strokeStyle = '#f8d17b'; ctx.lineWidth = 5;
       ctx.beginPath(); ctx.arc(px, py, 10, 0, Math.PI * 1.5); ctx.stroke(); ctx.lineWidth = 1;
     }
+    positionCamera();
+  }
+
+  function positionCamera() {
+    const vw = window.innerWidth, vh = window.innerHeight;
+    // Preserve square pixels while the camera pans across whichever axis overflows.
+    const size = Math.max(vw, vh, Math.min(vw, vh) * 1.18);
+    const tile = size / W;
+    const left = Math.min(0, Math.max(vw - size, vw / 2 - (game.player.renderX + .5) * tile));
+    const top = Math.min(0, Math.max(vh - size, vh / 2 - (game.player.renderY + .5) * tile));
+    canvas.style.width = `${size}px`;
+    canvas.style.height = `${size}px`;
+    canvas.style.left = `${left}px`;
+    canvas.style.top = `${top}px`;
   }
 
   function entityState(entity) {
@@ -583,6 +615,8 @@
   overlay.addEventListener('click', event => {
     const action = event.target.closest('[data-action]')?.dataset.action;
     if (action === 'start' || action === 'resume') { game.state = action === 'start' ? 'playing' : game.pausedFrom; sync(); }
+    else if (action === 'open-loot') openLootBox();
+    else if (action === 'continue') descend();
     else if (action === 'restart') { newRun(); game.state = 'playing'; sync(); }
   });
   newRun();

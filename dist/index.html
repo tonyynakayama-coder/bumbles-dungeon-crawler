@@ -40,20 +40,14 @@
           </div>
         </div>
         <div class="board-footer"><span><i class="legend-player"></i> YOU</span><span><i class="legend-monster"></i> MONSTER</span><span><i class="legend-potion"></i> HEALTH</span><span><i class="legend-stairs"></i> STAIRS</span></div>
-        <div class="gear-bar" aria-label="Equipped gear"><span><img id="weaponIcon" src="./loot/sword.png" alt=""><b id="weaponName">Bare hands</b><strong id="weaponPower">+0 ATK</strong></span><span><img src="./loot/helmet.png" alt=""><b>Armor</b><strong id="armorPower">+0 DEF</strong></span></div>
+        <div class="gear-bar" aria-label="Equipped gear"><span><img id="weaponIcon" src="./loot/sword.png" alt=""><b id="weaponName">Bare hands</b><strong id="weaponPower">+0 ATK</strong></span><span><img src="./loot/helmet.png" alt=""><b id="armorName">No armor</b><strong id="armorPower">+0 DEF</strong></span></div>
+        <div class="event-toast" aria-label="Latest events"><div class="event-log" id="eventLog" aria-live="polite"></div></div>
         <div class="board-controls" aria-label="Game controls">
           <div class="joystick-group"><span class="controls-caption">MOVE <small>WASD / ARROWS</small></span><div class="joystick" id="joystick" role="group" aria-label="Movement joystick"><div class="joystick-thumb" id="joystickThumb"></div></div></div>
           <div class="action-controls"><span class="controls-caption">FIGHT <small>SPACE / SHIFT</small></span><div class="action-buttons"><button type="button" id="attackButton" aria-label="Attack nearby monster">⚔<span>ATTACK</span></button><button type="button" id="blockButton" aria-label="Hold to block enemy attacks" aria-pressed="false">▣<span>BLOCK</span></button></div></div>
         </div>
       </section>
 
-      <aside class="side-panel action-panel" aria-label="Controls and events">
-        <div class="eyebrow">HOW TO PLAY</div>
-        <p class="help-copy">Monsters chase and strike in real time. Tap Attack when one is beside you; hold Block to reduce a hit. Find gear and chests, then reach the stairs.</p>
-        <div class="divider"></div>
-        <div class="eyebrow">LATEST EVENTS</div>
-        <div class="event-log" id="eventLog" aria-live="polite"></div>
-      </aside>
     </main>
     <footer class="site-footer"><span>ONE MORE FLOOR?</span><a href="./credits.html">ART CREDITS</a></footer>
   </div>
