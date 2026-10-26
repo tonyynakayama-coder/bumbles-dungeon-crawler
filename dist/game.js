@@ -48,6 +48,40 @@
   let joystickPointer = null;
   let attackHeld = false;
   let game;
+  const bestRunKey = 'bumbles-personal-best-v1';
+  const runFields = ['floor', 'bosses', 'kills', 'gemsCollected'];
+  const cleanCount = value => Number.isFinite(Number(value)) ? Math.max(0, Math.floor(Number(value))) : 0;
+
+  function loadPersonalBest() {
+    try {
+      const saved = JSON.parse(localStorage.getItem(bestRunKey));
+      if (!saved || !Number.isFinite(saved.floor) || saved.floor < 1) return null;
+      return Object.fromEntries(runFields.map(field => [field, cleanCount(saved[field])]));
+    } catch { return null; }
+  }
+
+  let personalBest = loadPersonalBest();
+
+  function recordRun() {
+    if (game.runResult) return;
+    const result = {
+      floor: game.floor,
+      bosses: game.bosses,
+      kills: game.kills,
+      gemsCollected: game.gemsCollected,
+      steps: game.turns
+    };
+    const previousBest = personalBest;
+    const newBest = !previousBest || runFields.some((field, index) => {
+      if (result[field] === previousBest[field]) return false;
+      return runFields.slice(0, index).every(earlier => result[earlier] === previousBest[earlier]) && result[field] > previousBest[field];
+    });
+    game.runResult = { ...result, newBest, previousFloor: previousBest?.floor ?? null };
+    if (newBest) {
+      personalBest = Object.fromEntries(runFields.map(field => [field, result[field]]));
+      try { localStorage.setItem(bestRunKey, JSON.stringify(personalBest)); } catch { /* The run still ends if storage is unavailable. */ }
+    }
+  }
 
   function newRun() {
     game = { floor: 1, hp: 24, maxHp: 24, weapon: 0, armor: 0, weaponName: 'Bare hands', armorName: 'No armor', weaponArt: 'sword', reward: null, kills: 0, bosses: 0, gemsCollected: 0, turns: 0, distanceTravelled: 0, state: 'start', pausedFrom: null, facing: 'down', blocking: false, nextAttackAt: 0, log: [] };
@@ -429,6 +463,7 @@
       addLog(incoming ? `${monster.name} hits for ${incoming}.` : `Blocked ${monster.name}'s attack!`);
       if (game.hp <= 0) {
         game.state = 'over';
+        recordRun();
         addLog(`Run over on floor ${game.floor}.`);
         clearInputs();
       }
@@ -449,7 +484,7 @@
   function renderOverlay() {
     overlay.classList.toggle('hidden', game.state === 'playing');
     if (game.state === 'playing') return;
-    if (game.state === 'start') overlayCard.innerHTML = `<span class="overlay-kicker">A QUICK DUNGEON RUN</span><h1>Enter the dungeon</h1><p>Move with the joystick or WASD. Attack nearby monsters, hold Block to defend, and reach the stairs for a loot box.</p><div class="overlay-actions">${button('Start exploring', 'start')}</div>`;
+    if (game.state === 'start') overlayCard.innerHTML = `<span class="overlay-kicker">A QUICK DUNGEON RUN</span><h1>Enter the dungeon</h1><p>Move with the joystick or WASD. Attack nearby monsters, hold Block to defend, and reach the stairs for a loot box.</p>${personalBest ? `<p class="best-before-run">YOUR BEST · FLOOR ${personalBest.floor}</p>` : ''}<div class="overlay-actions">${button('Start exploring', 'start')}</div>`;
     if (game.state === 'loot') {
       const reward = game.reward;
       overlayCard.innerHTML = reward.opened
@@ -457,7 +492,10 @@
         : `<span class="overlay-kicker">FLOOR ${reward.floor} CLEARED</span><h2>Your loot box awaits</h2><img class="loot-chest" src="./loot/chest.png" alt="Treasure chest"><p>Open it for a weapon and armor. Rare, Epic, and Legendary finds are harder to roll.</p><div class="overlay-actions">${button('Open loot box', 'open-loot')}</div>`;
     }
     if (game.state === 'paused') overlayCard.innerHTML = `<span class="overlay-kicker">TAKE A BREATHER</span><h2>Paused</h2><p>Your run is waiting right here.</p><div class="overlay-actions">${button('Resume run', 'resume')}</div>`;
-    if (game.state === 'over') overlayCard.innerHTML = `<span class="overlay-kicker">RUN OVER</span><h2>Deep enough?</h2><p>You reached floor ${game.floor} and defeated ${game.kills} monster${game.kills === 1 ? '' : 's'}.</p><div class="result-number">FLOOR ${String(game.floor).padStart(2, '0')}</div><div class="overlay-actions">${button('Try again', 'restart')}</div>`;
+    if (game.state === 'over') {
+      const result = game.runResult;
+      overlayCard.innerHTML = `<span class="overlay-kicker">RUN COMPLETE</span><h2>${result.newBest ? 'New personal best!' : 'Your run at a glance'}</h2><p class="run-message">${result.newBest ? (result.previousFloor === null ? 'Your first record is on the board. Nice run!' : `You beat your previous best on floor ${result.previousFloor}. Keep going!`) : `Personal best: floor ${personalBest.floor}. Ready for another descent?`}</p><div class="run-summary ${result.newBest ? 'is-best' : ''}"><div class="run-summary-feature"><span>FLOOR REACHED</span><strong>${String(result.floor).padStart(2, '0')}</strong></div><div><span>MONSTERS</span><strong>${result.kills}</strong></div><div><span>BOSSES</span><strong>${result.bosses}</strong></div><div><span>GEMS</span><strong>${result.gemsCollected}</strong></div><div><span>STEPS</span><strong>${result.steps}</strong></div></div>${result.newBest ? '<div class="record-ribbon" aria-label="New personal best">✦ NEW RECORD ✦</div>' : ''}<div class="overlay-actions">${button('Try again', 'restart')}</div>`;
+    }
   }
 
   function sync() {
