@@ -99,11 +99,11 @@
     const ordinaryCount = bossFloor ? 2 : Math.min(4, 2 + Math.floor(game.floor / 3));
     for (let i = 0; i < ordinaryCount; i++) {
       const tile = pick(4);
-      if (tile) monsters.push({ ...tile, renderX: tile.x, renderY: tile.y, boss: false, name: ['Red jelly', 'Cave bat', 'Iron imp'][rand(0, 2)], hp: 7 + Math.floor(game.floor * 1.5), maxHp: 7 + Math.floor(game.floor * 1.5), damage: 2 + Math.floor(game.floor / 3) });
+      if (tile) monsters.push({ ...tile, renderX: tile.x, renderY: tile.y, boss: false, name: ['Red jelly', 'Cave bat', 'Iron imp'][rand(0, 2)], ...monsterStats(false) });
     }
     if (bossFloor) {
       const tile = pick(6) || pick();
-      if (tile) monsters.push({ ...tile, renderX: tile.x, renderY: tile.y, boss: true, name: ['Royal jelly', 'Sun demon', 'Ancient lich'][((game.floor / 5) - 1) % 3], hp: 20 + game.floor * 2, maxHp: 20 + game.floor * 2, damage: 4 + Math.floor(game.floor / 3) });
+      if (tile) monsters.push({ ...tile, renderX: tile.x, renderY: tile.y, boss: true, name: ['Royal jelly', 'Sun demon', 'Ancient lich'][((game.floor / 5) - 1) % 3], ...monsterStats(true) });
     }
     const potions = [];
     for (let i = 0; i < 2; i++) { const tile = pick(3); if (tile) potions.push(tile); }
@@ -116,6 +116,22 @@
     enemyClock = 0;
     game.seen = new Set();
     reveal();
+  }
+
+  function monsterStats(boss) {
+    const hp = boss
+      ? 20 + game.floor * 2 + Math.round(game.weapon * 1.5)
+      : 7 + Math.floor(game.floor * 1.5) + Math.round(game.weapon * .75);
+    return { hp, maxHp: hp, damage: (boss ? 4 : 2) + Math.floor(game.floor / 3) + Math.floor(game.armor / 5) };
+  }
+
+  function damageFromHit(monster, roll) {
+    const raw = monster.damage + roll;
+    // Armor reduces a proportion of each hit, capped at 60%; it can never make
+    // an unblocked enemy harmless. Blocking is a separate, active defense.
+    const reduction = Math.min(.6, game.armor / (game.armor + 4));
+    const afterArmor = Math.max(1, Math.round(raw * (1 - reduction)));
+    return game.blocking ? Math.round(afterArmor * .35) : afterArmor;
   }
 
   function reveal() {
@@ -293,7 +309,7 @@
       if (animationTime < monster.nextAttackAt) continue;
       monster.nextAttackAt = animationTime + (monster.boss ? 1050 : 1450);
       monster.attackAt = animationTime;
-      const incoming = Math.max(0, monster.damage + rand(0, 2) - game.armor - (game.blocking ? 4 : 0));
+      const incoming = damageFromHit(monster, rand(0, 2));
       game.hp = Math.max(0, game.hp - incoming);
       if (incoming) game.player.hurtAt = animationTime + 110;
       addLog(incoming ? `${monster.name} hits for ${incoming}.` : `Blocked ${monster.name}'s attack!`);
