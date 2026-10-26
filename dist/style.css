@@ -120,3 +120,20 @@ body{background:#0c161e}
 }
 .board-controls .joystick-group{margin-left:clamp(56px,13vw,190px)}
 @media(max-width:700px){.board-controls .joystick-group{margin-left:clamp(28px,10vw,56px)}}
+
+/* Keep health visible without covering the dungeon. */
+.stats-panel{top:12px;left:12px;width:196px;min-height:0;padding:8px 10px;display:grid;grid-template-columns:43px minmax(0,1fr);grid-template-rows:auto auto;gap:3px 10px;background:#11212ccc;box-shadow:0 8px 22px #0007}
+.stats-panel>.eyebrow,.stats-panel>.divider,.stats-panel>.objective-card,.stats-panel>.stat-grid{display:none}
+.stats-panel .floor-number{grid-column:1;grid-row:1/3;display:flex;flex-direction:column;align-items:flex-start;justify-content:center;gap:0;margin:0}
+.stats-panel .floor-number span{font-size:.5rem;line-height:1.1}
+.stats-panel .floor-number strong{font-size:1.62rem;line-height:1}
+.stats-panel>.stat-heading{display:flex;grid-column:2;grid-row:1;align-self:end;font-size:.52rem;line-height:1}
+.stats-panel>.stat-heading strong{font-size:.65rem}
+.stats-panel .health-track{grid-column:2;grid-row:2;height:9px;margin:0 0 2px;padding:1px}
+@media(max-width:700px){
+  .stats-panel{top:10px;left:10px;right:auto;width:min(196px,calc(100vw - 110px));padding:7px 9px;gap:2px 8px}
+  .stats-panel #healthValue{display:inline}
+  .board-heading{top:64px}
+  .gear-bar{top:99px}
+  .site-footer{top:139px}
+}
