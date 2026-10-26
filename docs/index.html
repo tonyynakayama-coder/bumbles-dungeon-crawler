@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#101820">
+  <meta name="description" content="Bumbles is a quick real-time dungeon crawler. Explore, fight monsters, beat bosses, and descend forever.">
+  <title>Bumbles — Dungeon Crawler</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='13' fill='%23101820'/%3E%3Cpath d='M18 17h28v30H18z' fill='%23f7bd59'/%3E%3Cpath d='M22 25h7v7h-7zm13 0h7v7h-7z' fill='%23101820'/%3E%3Cpath d='M27 38h10v4H27z' fill='%23101820'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="./style.css?v=run-recap">
+  <script src="./game.js?v=run-recap" defer></script>
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <button class="quiet-button" id="pauseButton" type="button" aria-label="Pause game">Ⅱ <span>Pause</span></button>
+    </header>
+
+    <main class="game-layout">
+      <aside class="side-panel stats-panel" aria-label="Run status">
+        <div class="eyebrow">CURRENT RUN</div>
+        <div class="floor-number"><span>FLOOR</span><strong id="floorValue">01</strong></div>
+        <div class="divider"></div>
+        <div class="stat-heading"><span>HEALTH</span><strong id="healthValue">20 / 20</strong></div>
+        <div class="health-track"><div id="healthBar"></div></div>
+        <div class="stat-grid">
+          <div><span>MONSTERS</span><strong id="killsValue">0</strong></div>
+          <div><span>BOSSES</span><strong id="bossesValue">0</strong></div>
+        </div>
+        <div class="objective-card"><span class="objective-icon" aria-hidden="true">⌄</span><div><small>YOUR GOAL</small><strong id="goalText">Find the stairs</strong><p id="goalDetail">Explore the dungeon to descend.</p></div></div>
+      </aside>
+
+      <section class="board-section" aria-label="Dungeon game">
+        <div class="board-heading"><span id="floorLabel">THE FIRST DESCENT</span><span id="turnLabel">STEPS 00</span></div>
+        <div class="wayfinder" aria-label="Route to the next goal"><span id="wayfinderArrow" aria-hidden="true">➤</span><span id="wayfinderText">STAIRS</span></div>
+        <div class="gem-counter" aria-label="Gems collected"><img src="./environment/kyrise-crystal.png" alt=""><strong id="gemValue">0</strong></div>
+        <div class="board-frame">
+          <canvas id="gameCanvas" width="600" height="600" role="img" aria-label="Top-down dungeon map"></canvas>
+          <div class="overlay" id="gameOverlay" aria-live="polite">
+            <div class="overlay-card" id="overlayCard"></div>
+          </div>
+        </div>
+        <div class="board-footer"><span><i class="legend-player"></i> YOU</span><span><i class="legend-monster"></i> MONSTER</span><span><i class="legend-potion"></i> HEALTH</span><span><i class="legend-stairs"></i> STAIRS</span></div>
+        <div class="gear-bar" aria-label="Equipped gear"><span><img id="weaponIcon" src="./loot/sword.png" alt=""><b id="weaponName">Bare hands</b><strong id="weaponPower">+0 ATK</strong></span><span><img src="./loot/helmet.png" alt=""><b id="armorName">No armor</b><strong id="armorPower">+0 DEF</strong></span></div>
+        <div class="event-toast" aria-label="Latest events"><div class="event-log" id="eventLog" aria-live="polite"></div></div>
+        <div class="board-controls" aria-label="Game controls">
+          <div class="joystick-group"><span class="controls-caption">MOVE <small>WASD / ARROWS</small></span><div class="joystick" id="joystick" role="group" aria-label="Movement joystick"><div class="joystick-thumb" id="joystickThumb"></div></div></div>
+          <div class="action-controls"><span class="controls-caption">FIGHT <small>SPACE / SHIFT</small></span><div class="action-buttons"><button type="button" id="attackButton" aria-label="Attack nearby monster">⚔<span>ATTACK</span></button><button type="button" id="blockButton" aria-label="Hold to block enemy attacks" aria-pressed="false">▣<span>BLOCK</span></button></div></div>
+        </div>
+      </section>
+
+    </main>
+    <footer class="site-footer"><span>ONE MORE FLOOR?</span><a href="./credits.html">ART CREDITS</a></footer>
+  </div>
+</body>
+</html>
