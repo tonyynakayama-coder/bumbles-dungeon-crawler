@@ -40,7 +40,7 @@ body{background:#0c161e}
 .board-frame{position:fixed;inset:0;z-index:0;width:100vw;height:100dvh;padding:0;border:0;border-radius:0;box-shadow:none;background:#0c161e;overflow:hidden}
 .board-frame canvas{position:absolute;display:block;max-width:none;aspect-ratio:auto;border:0;border-radius:0;image-rendering:pixelated;touch-action:none}
 .topbar,.stats-panel,.board-heading,.gear-bar,.event-toast,.board-controls,.site-footer{position:fixed;z-index:5}
-.topbar{top:0;left:0;right:0;height:66px;padding:0 20px;border:0;background:linear-gradient(#09151be8,#09151b9c 78%,transparent);pointer-events:none}
+.topbar{top:0;left:0;right:0;height:66px;padding:0 20px;border:0;background:linear-gradient(#09151be8,#09151b9c 78%,transparent);justify-content:flex-end;pointer-events:none}
 .topbar>*{pointer-events:auto}
 .brand{font-size:1rem;text-shadow:0 2px 10px #000}
 .brand-mark{width:31px;height:31px;font-size:1.3rem}
