@@ -19,6 +19,8 @@
   const rand = (min, max) => min + Math.floor(Math.random() * (max - min + 1));
   const key = (x, y) => `${x},${y}`;
   const dist = (a, b) => Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
+  const distance = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+  const cellOf = entity => ({ x: Math.round(entity.x), y: Math.round(entity.y) });
   const spriteNames = ['hero', 'red-jelly', 'cave-bat', 'iron-imp', 'royal-jelly', 'sun-demon', 'ancient-lich', 'potion', 'stairs'];
   const sprites = Object.fromEntries(spriteNames.map(name => {
     const image = new Image();
@@ -40,17 +42,15 @@
   let animationTime = 0;
   let lastFrame = 0;
   let enemyClock = 0;
-  let movementClock = 0;
   const heldKeys = new Set();
-  let joystickDirection = null;
+  let joystickVector = { x: 0, y: 0 };
   let joystickPointer = null;
   let attackHeld = false;
   let game;
 
   function newRun() {
-    game = { floor: 1, hp: 24, maxHp: 24, weapon: 0, armor: 0, weaponName: 'Bare hands', armorName: 'No armor', weaponArt: 'sword', reward: null, kills: 0, bosses: 0, turns: 0, state: 'start', pausedFrom: null, facing: 'down', blocking: false, nextAttackAt: 0, log: [] };
+    game = { floor: 1, hp: 24, maxHp: 24, weapon: 0, armor: 0, weaponName: 'Bare hands', armorName: 'No armor', weaponArt: 'sword', reward: null, kills: 0, bosses: 0, turns: 0, distanceTravelled: 0, state: 'start', pausedFrom: null, facing: 'down', blocking: false, nextAttackAt: 0, log: [] };
     enemyClock = 0;
-    movementClock = 0;
     makeFloor();
     addLog('A new descent begins.');
     sync();
@@ -108,12 +108,13 @@
     const potions = [];
     for (let i = 0; i < 2; i++) { const tile = pick(3); if (tile) potions.push(tile); }
     game.map = grid;
-    game.player = { ...start, renderX: start.x, renderY: start.y };
+    game.player = { ...start, renderX: start.x, renderY: start.y, lastCellX: start.x, lastCellY: start.y };
     game.exit = exit;
     game.monsters = monsters;
     game.potions = potions;
     game.bossDefeated = !bossFloor;
     enemyClock = 0;
+    game.exitWarned = false;
     game.seen = new Set();
     reveal();
   }
@@ -135,8 +136,9 @@
   }
 
   function reveal() {
+    const playerCell = cellOf(game.player);
     for (let y = 0; y < W; y++) for (let x = 0; x < W; x++) {
-      if (Math.abs(x - game.player.x) + Math.abs(y - game.player.y) <= 4) game.seen.add(key(x, y));
+      if (Math.abs(x - playerCell.x) + Math.abs(y - playerCell.y) <= 4) game.seen.add(key(x, y));
     }
   }
 
@@ -148,16 +150,18 @@
   // Breadth-first search follows corridors and avoids other monsters.
   // The path length is the detection range, so walls can break pursuit.
   function pathToPlayer(monster, range = 6) {
-    if (dist(monster, game.player) > range) return null;
-    const queue = [{ x: monster.x, y: monster.y, length: 0 }];
-    const seen = new Set([key(monster.x, monster.y)]);
+    const originCell = cellOf(monster), playerCell = cellOf(game.player);
+    if (dist(originCell, playerCell) > range) return null;
+    if (originCell.x === playerCell.x && originCell.y === playerCell.y) return { ...game.player, length: 0 };
+    const queue = [{ ...originCell, length: 0 }];
+    const seen = new Set([key(originCell.x, originCell.y)]);
     const previous = new Map();
-    const occupied = new Set(game.monsters.filter(other => other !== monster).map(other => key(other.x, other.y)));
+    const occupied = new Set(game.monsters.filter(other => other !== monster).map(other => { const cell = cellOf(other); return key(cell.x, cell.y); }));
     for (let index = 0; index < queue.length; index++) {
       const current = queue[index];
-      if (current.x === game.player.x && current.y === game.player.y) {
+      if (current.x === playerCell.x && current.y === playerCell.y) {
         let cursor = key(current.x, current.y);
-        const origin = key(monster.x, monster.y);
+        const origin = key(originCell.x, originCell.y);
         while (previous.get(cursor) !== origin && previous.has(cursor)) cursor = previous.get(cursor);
         const [x, y] = cursor.split(',').map(Number);
         return { x, y, length: current.length };
@@ -178,19 +182,55 @@
     for (const monster of game.monsters) {
       const step = pathToPlayer(monster);
       if (step) {
-        if (step.length === 1) continue;
-        monster.x = step.x;
-        monster.y = step.y;
+        const target = step.length <= 1 ? game.player : step;
+        monster.targetX = target.x;
+        monster.targetY = target.y;
       } else if (Math.random() < .42) {
+        const origin = cellOf(monster);
         const choices = Object.values(directions)
-          .map(([dx, dy]) => ({ x: monster.x + dx, y: monster.y + dy }))
-          .filter(tile => game.map[tile.y]?.[tile.x] && !(tile.x === game.player.x && tile.y === game.player.y) && !game.monsters.some(other => other !== monster && other.x === tile.x && other.y === tile.y));
+          .map(([dx, dy]) => ({ x: origin.x + dx, y: origin.y + dy }))
+          .filter(tile => game.map[tile.y]?.[tile.x] && distance(tile, game.player) > .8 && !game.monsters.some(other => other !== monster && cellOf(other).x === tile.x && cellOf(other).y === tile.y));
         if (choices.length) {
           const next = choices[rand(0, choices.length - 1)];
-          monster.x = next.x;
-          monster.y = next.y;
+          monster.targetX = next.x;
+          monster.targetY = next.y;
         }
       }
+    }
+  }
+
+  function canOccupy(x, y, radius = .26) {
+    for (const dx of [-radius, radius]) for (const dy of [-radius, radius]) {
+      const cellX = Math.floor(x + dx + .5), cellY = Math.floor(y + dy + .5);
+      if (!game.map[cellY]?.[cellX]) return false;
+    }
+    return true;
+  }
+
+  function lineClear(from, to) {
+    const count = Math.ceil(distance(from, to) * 8);
+    for (let step = 1; step < count; step++) {
+      const portion = step / count;
+      if (!canOccupy(from.x + (to.x - from.x) * portion, from.y + (to.y - from.y) * portion, .05)) return false;
+    }
+    return true;
+  }
+
+  function moveEnemies(delta) {
+    for (const monster of game.monsters) {
+      if (monster.targetX === undefined) continue;
+      const dx = monster.targetX - monster.x, dy = monster.targetY - monster.y;
+      const remaining = Math.hypot(dx, dy);
+      if (remaining < .02) continue;
+      const speed = (monster.boss ? 1.55 : 1.85) * delta / 1000;
+      const step = Math.min(speed, remaining);
+      const vx = dx / remaining * step, vy = dy / remaining * step;
+      const clear = (x, y) => canOccupy(x, y, .23)
+        && distance({ x, y }, game.player) >= .68
+        && !game.monsters.some(other => other !== monster && distance({ x, y }, other) < .58);
+      if (clear(monster.x + vx, monster.y + vy)) { monster.x += vx; monster.y += vy; }
+      else if (clear(monster.x + vx, monster.y)) monster.x += vx;
+      else if (clear(monster.x, monster.y + vy)) monster.y += vy;
     }
   }
 
@@ -236,29 +276,51 @@
     sync();
   }
 
-  function move(dx, dy) {
+  function movePlayer(dx, dy, delta) {
     if (game.state !== 'playing') return;
-    game.facing = Object.keys(directions).find(direction => directions[direction][0] === dx && directions[direction][1] === dy) || game.facing;
-    const x = game.player.x + dx, y = game.player.y + dy;
-    if (x < 0 || y < 0 || x >= W || y >= W || !game.map[y][x]) return;
-    const monster = game.monsters.find(m => m.x === x && m.y === y);
-    if (monster) return;
-    game.player.x = x;
-    game.player.y = y;
-    game.turns++;
-    reveal();
-    const potionIndex = game.potions.findIndex(p => p.x === x && p.y === y);
+    game.facing = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up');
+    const beforeX = game.player.x, beforeY = game.player.y;
+    const vx = dx * 3.5 * delta / 1000, vy = dy * 3.5 * delta / 1000;
+    const clear = (x, y) => canOccupy(x, y)
+      && !game.monsters.some(monster => distance({ x, y }, monster) < .56);
+    if (clear(game.player.x + vx, game.player.y + vy)) {
+      game.player.x += vx;
+      game.player.y += vy;
+    } else {
+      if (clear(game.player.x + vx, game.player.y)) game.player.x += vx;
+      if (clear(game.player.x, game.player.y + vy)) game.player.y += vy;
+    }
+    const travelled = Math.hypot(game.player.x - beforeX, game.player.y - beforeY);
+    if (!travelled) return;
+    game.distanceTravelled += travelled;
+    const steps = Math.floor(game.distanceTravelled);
+    if (steps !== game.turns) {
+      game.turns = steps;
+      $('turnLabel').textContent = `STEPS ${String(steps).padStart(2, '0')}`;
+    }
+    const playerCell = cellOf(game.player);
+    if (playerCell.x !== game.player.lastCellX || playerCell.y !== game.player.lastCellY) {
+      game.player.lastCellX = playerCell.x;
+      game.player.lastCellY = playerCell.y;
+      reveal();
+    }
+    const potionIndex = game.potions.findIndex(p => distance(p, game.player) < .46);
     if (potionIndex >= 0) {
       game.potions.splice(potionIndex, 1);
       const healed = Math.min(game.maxHp - game.hp, 8 + Math.floor(game.floor / 3));
       game.hp += healed;
       addLog(healed ? `Found a potion. +${healed} health.` : 'Found a potion. Health is full.');
+      sync();
     }
-    if (x === game.exit.x && y === game.exit.y) {
-      if (!game.bossDefeated) addLog('The stairs are sealed. Defeat the boss!');
-      else { finishFloor(); return; }
-    }
-    sync();
+    if (distance(game.player, game.exit) < .48) {
+      if (!game.bossDefeated) {
+        if (!game.exitWarned) {
+          game.exitWarned = true;
+          addLog('The stairs are sealed. Defeat the boss!');
+          sync();
+        }
+      } else { finishFloor(); return; }
+    } else if (distance(game.player, game.exit) > .75) game.exitWarned = false;
   }
 
   function descend() {
@@ -278,8 +340,8 @@
     game.nextAttackAt = animationTime + 430;
     game.player.attackAt = animationTime;
     const [fx, fy] = directions[game.facing];
-    const adjacent = game.monsters.filter(monster => dist(monster, game.player) === 1);
-    const monster = adjacent.find(monster => monster.x === game.player.x + fx && monster.y === game.player.y + fy) || adjacent[0];
+    const adjacent = game.monsters.filter(monster => distance(monster, game.player) <= 1.22 && lineClear(monster, game.player));
+    const monster = adjacent.find(monster => ((monster.x - game.player.x) * fx + (monster.y - game.player.y) * fy) > .35) || adjacent[0];
     if (!monster) { draw(); return; }
     monster.hurtAt = animationTime + 80;
     const critical = Math.random() < .16;
@@ -301,7 +363,7 @@
 
   function enemyAttacks() {
     for (const monster of game.monsters) {
-      if (dist(monster, game.player) !== 1) { monster.inRange = false; continue; }
+      if (distance(monster, game.player) > 1.08 || !lineClear(monster, game.player)) { monster.inRange = false; continue; }
       if (!monster.inRange) {
         monster.inRange = true;
         monster.nextAttackAt = animationTime + 650;
@@ -411,7 +473,7 @@
       if (sprites.potion.complete && sprites.potion.naturalWidth) drawSprite(ctx, 'potion', p.x * TILE, p.y * TILE, 0, frame, TILE);
       else drawPotion(p.x, p.y);
     } });
-    game.monsters.forEach(m => { if (game.seen.has(key(m.x, m.y))) {
+    game.monsters.forEach(m => { const cell = cellOf(m); if (game.seen.has(key(cell.x, cell.y))) {
       const sprite = monsterArt[spriteFor(m.name)];
       if (sprite?.complete && sprite.naturalWidth) drawMonsterArt(ctx, m, m.renderX * TILE, m.renderY * TILE, TILE);
       else drawMonster(m);
@@ -492,17 +554,14 @@
       if (game.state === 'playing') {
         if (attackHeld) attack();
         enemyClock += delta;
-        if (enemyClock >= 950) {
-          enemyClock -= 950;
+        if (enemyClock >= 320) {
+          enemyClock %= 320;
           enemyTurn();
         }
-        movementClock += delta;
-        if (movementClock >= 165) {
-          movementClock %= 165;
-          const direction = activeDirection();
-          if (direction) move(...directions[direction]);
-        }
-        enemyAttacks();
+        const input = movementVector();
+        if (input.x || input.y) movePlayer(input.x, input.y, delta);
+        if (game.state === 'playing') moveEnemies(delta);
+        if (game.state === 'playing') enemyAttacks();
       }
       const slide = Math.min(1, delta / 90);
       const entities = [game.player, ...game.monsters];
@@ -552,9 +611,15 @@
   }
 
   const movementKeys = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right', w: 'up', s: 'down', a: 'left', d: 'right' };
-  function activeDirection() {
-    if (joystickDirection) return joystickDirection;
-    return Array.from(heldKeys).reverse().map(key => movementKeys[key]).find(Boolean) || null;
+  function movementVector() {
+    if (joystickVector.x || joystickVector.y) return joystickVector;
+    let x = 0, y = 0;
+    for (const held of heldKeys) {
+      const direction = movementKeys[held];
+      if (direction) { x += directions[direction][0]; y += directions[direction][1]; }
+    }
+    const magnitude = Math.hypot(x, y);
+    return magnitude ? { x: x / magnitude, y: y / magnitude } : { x: 0, y: 0 };
   }
 
   function setBlocking(value) {
@@ -567,10 +632,9 @@
 
   function clearInputs() {
     heldKeys.clear();
-    joystickDirection = null;
+    joystickVector = { x: 0, y: 0 };
     joystickPointer = null;
     attackHeld = false;
-    movementClock = 0;
     $('joystickThumb').style.transform = 'translate(0, 0)';
     setBlocking(false);
   }
@@ -582,7 +646,8 @@
     const length = Math.hypot(dx, dy);
     const scale = Math.min(1, 34 / (length || 1));
     $('joystickThumb').style.transform = `translate(${dx * scale}px, ${dy * scale}px)`;
-    joystickDirection = length < 12 ? null : Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up');
+    const strength = length < 6 ? 0 : Math.min(1, (length - 6) / 28);
+    joystickVector = length ? { x: dx / length * strength, y: dy / length * strength } : { x: 0, y: 0 };
   }
 
   const joystick = $('joystick');
@@ -592,14 +657,12 @@
     joystickPointer = event.pointerId;
     joystick.setPointerCapture(event.pointerId);
     updateJoystick(event);
-    if (joystickDirection) move(...directions[joystickDirection]);
-    movementClock = 0;
   });
   joystick.addEventListener('pointermove', event => { if (event.pointerId === joystickPointer) updateJoystick(event); });
   const releaseJoystick = event => {
     if (event.pointerId !== joystickPointer) return;
     joystickPointer = null;
-    joystickDirection = null;
+    joystickVector = { x: 0, y: 0 };
     $('joystickThumb').style.transform = 'translate(0, 0)';
   };
   joystick.addEventListener('pointerup', releaseJoystick);
@@ -614,7 +677,7 @@
     const k = event.key.length === 1 ? event.key.toLowerCase() : event.key;
     if (k in movementKeys && game.state === 'playing') {
       event.preventDefault();
-      if (!heldKeys.has(k)) { heldKeys.add(k); move(...directions[movementKeys[k]]); movementClock = 0; }
+      heldKeys.add(k);
     } else if (k === 'Escape' && (game.state === 'playing' || game.state === 'paused')) { event.preventDefault(); togglePause(); }
     else if ((k === ' ' || k === 'j') && game.state === 'playing') { event.preventDefault(); attackHeld = true; attack(); }
     else if ((k === 'Shift' || k === 'k') && game.state === 'playing') { event.preventDefault(); setBlocking(true); }

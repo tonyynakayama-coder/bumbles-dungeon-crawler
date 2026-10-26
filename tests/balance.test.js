@@ -66,6 +66,7 @@ game.armor = 12;
 game.blocking = false;
 game.hp = game.maxHp = 30;
 game.state = 'playing';
+game.map = Array.from({ length: 15 }, () => Array(15).fill(1));
 game.player = { x: 7, y: 7, renderX: 7, renderY: 7 };
 game.monsters = [{ x: 7, y: 8, renderX: 7, renderY: 8, name: 'Red jelly', ...testGame.monsterStats(false), inRange: true, nextAttackAt: 0 }];
 testGame.enemyAttacks();
