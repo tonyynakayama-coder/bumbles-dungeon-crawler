@@ -137,3 +137,29 @@ body{background:#0c161e}
   .gear-bar{top:99px}
   .site-footer{top:139px}
 }
+
+/* The map stays under the player; the exposed edge shares its stone grid. */
+.board-frame{background-color:#111e26;background-image:linear-gradient(#54717d12 1px,transparent 1px),linear-gradient(90deg,#54717d12 1px,transparent 1px);background-size:var(--tile-size,56px) var(--tile-size,56px);background-position:var(--map-left,0px) var(--map-top,0px)}
+.wayfinder,.gem-counter{position:fixed;z-index:6;display:flex;align-items:center;gap:7px;color:#d5ecf0;font-size:.63rem;font-weight:900;letter-spacing:.08em;text-shadow:0 2px 8px #000}
+.wayfinder{top:143px;left:50%;transform:translateX(-50%);padding:7px 10px;background:#11212cdb;border:1px solid #4b7886;border-radius:8px;white-space:nowrap}
+.wayfinder #wayfinderArrow{display:inline-block;color:#86d4ed;font-size:1rem;line-height:1;transition:transform .2s}
+.gem-counter{top:207px;right:18px;padding:5px 8px;background:#11212cdb;border:1px solid #3c6872;border-radius:7px}
+.gem-counter img{width:17px;height:17px;object-fit:contain;image-rendering:pixelated}
+@media(max-width:700px){
+  .topbar{height:36px;background:linear-gradient(#09151bc2,transparent)}
+  .quiet-button{padding:4px 7px;font-size:.66rem}
+  .stats-panel{top:0;left:0;right:0;width:100vw;height:0;min-height:0;padding:0;display:block;border:0;border-radius:0;background:none;box-shadow:none;backdrop-filter:none;pointer-events:none}
+  .stats-panel .floor-number,.stats-panel>.stat-heading span{display:none}
+  .stats-panel>.stat-heading{position:fixed;top:10px;left:10px;display:block;margin:0;padding:0;color:#fff0d4;text-shadow:0 1px 6px #000,0 1px 12px #000}
+  .stats-panel>.stat-heading strong{font-size:.7rem;color:#fff0d4}
+  .stats-panel .health-track{position:fixed;top:0;left:0;width:100vw;height:4px;margin:0;padding:0;border:0;border-radius:0;background:#17242a}
+  .stats-panel .health-track div{border-radius:0}
+  .board-heading{top:42px;left:9px;right:auto;width:auto;max-width:calc(100vw - 145px);padding:5px 7px;font-size:.51rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .board-heading span:first-child{overflow:hidden;text-overflow:ellipsis}
+  .wayfinder{top:42px;left:auto;right:9px;transform:none;padding:5px 7px;font-size:.53rem}
+  .wayfinder #wayfinderArrow{font-size:.82rem}
+  .gem-counter{top:7px;right:88px;padding:2px 5px;border:0;background:none;font-size:.62rem}
+  .gem-counter img{width:15px;height:15px}
+  .gear-bar{top:78px}
+  .site-footer{top:117px}
+}

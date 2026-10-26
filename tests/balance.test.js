@@ -7,7 +7,7 @@ const elements = new Map();
 const context2d = new Proxy({}, { get: (target, property) => target[property] || (() => {}) });
 function element(id) {
   if (!elements.has(id)) elements.set(id, {
-    style: {}, classList: { toggle() {} }, textContent: '', innerHTML: '',
+    style: { setProperty() {} }, classList: { toggle() {} }, textContent: '', innerHTML: '',
     setAttribute() {}, replaceChildren() {}, addEventListener() {},
     getContext() { return context2d; }, width: 600, height: 600
   });
@@ -15,7 +15,7 @@ function element(id) {
 }
 class ImageMock { constructor() { this.complete = false; this.naturalWidth = 0; } set src(value) { this._src = value; } }
 const sandbox = {
-  document: { getElementById: element, createElement: () => element(Symbol()), addEventListener() {} },
+  document: { getElementById: element, querySelector: element, createElement: () => element(Symbol()), addEventListener() {} },
   window: { innerWidth: 390, innerHeight: 844, addEventListener() {} },
   Image: ImageMock, requestAnimationFrame() {}, Math, console
 };

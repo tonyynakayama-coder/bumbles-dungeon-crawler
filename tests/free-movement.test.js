@@ -9,7 +9,7 @@ const context2d = new Proxy({}, { get: (target, property) => target[property] ||
 const listen = (name, type, callback) => listeners.set(`${name}:${type}`, callback);
 function element(id) {
   if (!elements.has(id)) elements.set(id, {
-    style: {}, classList: { toggle() {} }, textContent: '', innerHTML: '',
+    style: { setProperty(name, value) { this[name] = value; } }, classList: { toggle() {} }, textContent: '', innerHTML: '',
     setAttribute() {}, replaceChildren() {},
     addEventListener(type, callback) { listen(id, type, callback); },
     getBoundingClientRect() { return { left: 0, top: 0, width: 100, height: 100 }; },
@@ -19,13 +19,13 @@ function element(id) {
 }
 class ImageMock { constructor() { this.complete = false; this.naturalWidth = 0; } set src(value) { this._src = value; } }
 const sandbox = {
-  document: { getElementById: element, createElement: () => element(Symbol()), addEventListener(type, callback) { listen('document', type, callback); } },
+  document: { getElementById: element, querySelector: element, createElement: () => element(Symbol()), addEventListener(type, callback) { listen('document', type, callback); } },
   window: { innerWidth: 390, innerHeight: 844, addEventListener(type, callback) { listen('window', type, callback); } },
   Image: ImageMock, requestAnimationFrame() {}, Math, console
 };
 vm.createContext(sandbox);
 let source = fs.readFileSync(path.join(__dirname, '../dist/game.js'), 'utf8');
-source = source.replace('  newRun();\n  requestAnimationFrame(animate);', '  newRun();\n  globalThis.testGame = { get game() { return game; }, animate, attack, movePlayer, enemyTurn, moveEnemies };\n  requestAnimationFrame(animate);');
+source = source.replace('  newRun();\n  requestAnimationFrame(animate);', '  newRun();\n  globalThis.testGame = { get game() { return game; }, animate, attack, movePlayer, enemyTurn, moveEnemies, routeTo, updateWayfinder };\n  requestAnimationFrame(animate);');
 vm.runInContext(source, sandbox);
 const testGame = sandbox.testGame;
 const game = testGame.game;
@@ -38,8 +38,22 @@ game.state = 'playing';
 game.map = openMap();
 game.monsters = [];
 game.potions = [];
+game.gems = [];
 game.exit = { x: 14, y: 14 };
 game.seen = new Set();
+resetPlayer();
+testGame.animate(1000);
+const cameraTile = parseFloat(element('gameCanvas').style.width) / 15;
+assert(Math.abs(parseFloat(element('gameCanvas').style.left) + (game.player.renderX + .5) * cameraTile - 195) < .01, 'Player stays centered horizontally');
+assert(Math.abs(parseFloat(element('gameCanvas').style.top) + (game.player.renderY + .5) * cameraTile - 422) < .01, 'Player stays centered vertically');
+game.player = { x: 1, y: 1, renderX: 1, renderY: 1, lastCellX: 1, lastCellY: 1 };
+testGame.animate(1016);
+assert(Math.abs(parseFloat(element('gameCanvas').style.left) + 1.5 * cameraTile - 195) < .01, 'Camera stays centered near the map edge');
+resetPlayer();
+game.gems = [{ x: 8, y: 7 }];
+testGame.movePlayer(1, 0, 280);
+assert.equal(game.gems.length, 0, 'Walking over a gem collects it');
+assert.equal(game.gemsCollected, 1, 'Gem collection updates the run total');
 resetPlayer();
 
 fire('joystick', 'pointerdown', { pointerId: 1, clientX: 78, clientY: 78, preventDefault() {} });
@@ -86,6 +100,18 @@ frames(180);
 assert(game.monsters[0].x > 6, 'Enemy should navigate around a wall while moving smoothly');
 
 game.monsters = [];
+game.map = openMap();
+game.map[7][8] = 0;
+resetPlayer();
+game.exit = { x: 9, y: 7 };
+game.bossDefeated = true;
+const route = testGame.routeTo(game.player, game.exit);
+assert(route.length > 2 && route[0].y !== 7, 'Wayfinder routes around walls rather than pointing through them');
+testGame.updateWayfinder();
+assert.match(element('wayfinderText').textContent, /STAIRS.*STEPS/, 'Wayfinder names the destination and route distance');
+
+game.monsters = [];
+game.map = openMap();
 resetPlayer();
 game.exit = { x: 8, y: 7 };
 game.bossDefeated = true;

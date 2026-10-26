@@ -42,6 +42,7 @@
   let animationTime = 0;
   let lastFrame = 0;
   let enemyClock = 0;
+  let guideClock = 0;
   const heldKeys = new Set();
   let joystickVector = { x: 0, y: 0 };
   let joystickPointer = null;
@@ -49,8 +50,9 @@
   let game;
 
   function newRun() {
-    game = { floor: 1, hp: 24, maxHp: 24, weapon: 0, armor: 0, weaponName: 'Bare hands', armorName: 'No armor', weaponArt: 'sword', reward: null, kills: 0, bosses: 0, turns: 0, distanceTravelled: 0, state: 'start', pausedFrom: null, facing: 'down', blocking: false, nextAttackAt: 0, log: [] };
+    game = { floor: 1, hp: 24, maxHp: 24, weapon: 0, armor: 0, weaponName: 'Bare hands', armorName: 'No armor', weaponArt: 'sword', reward: null, kills: 0, bosses: 0, gemsCollected: 0, turns: 0, distanceTravelled: 0, state: 'start', pausedFrom: null, facing: 'down', blocking: false, nextAttackAt: 0, log: [] };
     enemyClock = 0;
+    guideClock = 0;
     makeFloor();
     addLog('A new descent begins.');
     sync();
@@ -107,16 +109,58 @@
     }
     const potions = [];
     for (let i = 0; i < 2; i++) { const tile = pick(3); if (tile) potions.push(tile); }
+    const gems = [];
+    for (let i = 0; i < 3; i++) { const tile = pick(2); if (tile) gems.push(tile); }
     game.map = grid;
     game.player = { ...start, renderX: start.x, renderY: start.y, lastCellX: start.x, lastCellY: start.y };
     game.exit = exit;
     game.monsters = monsters;
     game.potions = potions;
+    game.gems = gems;
     game.bossDefeated = !bossFloor;
     enemyClock = 0;
     game.exitWarned = false;
     game.seen = new Set();
     reveal();
+    updateWayfinder();
+  }
+
+  // A route through actual walkable tiles gives a useful direction at junctions.
+  function routeTo(origin, destination) {
+    const start = cellOf(origin), goal = cellOf(destination);
+    const queue = [start], previous = new Map([[key(start.x, start.y), null]]);
+    for (let index = 0; index < queue.length; index++) {
+      const current = queue[index];
+      if (current.x === goal.x && current.y === goal.y) {
+        const route = [];
+        let id = key(current.x, current.y);
+        while (id && id !== key(start.x, start.y)) {
+          const [x, y] = id.split(',').map(Number);
+          route.unshift({ x, y });
+          id = previous.get(id);
+        }
+        return route;
+      }
+      for (const [dx, dy] of Object.values(directions)) {
+        const x = current.x + dx, y = current.y + dy, id = key(x, y);
+        if (!game.map[y]?.[x] || previous.has(id)) continue;
+        previous.set(id, key(current.x, current.y));
+        queue.push({ x, y });
+      }
+    }
+    return [];
+  }
+
+  function updateWayfinder() {
+    if (!game?.map || !game.player) return;
+    const boss = game.bossDefeated ? null : game.monsters.find(monster => monster.boss);
+    const target = boss || game.exit;
+    const route = routeTo(game.player, target);
+    game.route = route;
+    const step = route[0];
+    const direction = step ? Math.atan2(step.y - game.player.y, step.x - game.player.x) * 180 / Math.PI : 0;
+    $('wayfinderArrow').style.transform = `rotate(${direction}deg)`;
+    $('wayfinderText').textContent = `${boss ? 'BOSS' : 'STAIRS'} · ${route.length} STEPS`;
   }
 
   function monsterStats(boss) {
@@ -303,6 +347,14 @@
       game.player.lastCellX = playerCell.x;
       game.player.lastCellY = playerCell.y;
       reveal();
+      updateWayfinder();
+    }
+    const gemIndex = game.gems.findIndex(gem => distance(gem, game.player) < .46);
+    if (gemIndex >= 0) {
+      game.gems.splice(gemIndex, 1);
+      game.gemsCollected++;
+      addLog('Gem collected!');
+      sync();
     }
     const potionIndex = game.potions.findIndex(p => distance(p, game.player) < .46);
     if (potionIndex >= 0) {
@@ -414,19 +466,21 @@
     $('healthBar').style.width = `${game.hp / game.maxHp * 100}%`;
     $('killsValue').textContent = game.kills;
     $('bossesValue').textContent = game.bosses;
+    $('gemValue').textContent = game.gemsCollected;
     $('turnLabel').textContent = `STEPS ${String(game.turns).padStart(2, '0')}`;
     $('weaponName').textContent = game.weaponName;
     $('armorName').textContent = game.armorName;
     $('weaponPower').textContent = `+${game.weapon} ATK`;
     $('armorPower').textContent = `+${game.armor} DEF`;
     $('weaponIcon').src = `./loot/${game.weaponArt}.png`;
-    $('floorLabel').textContent = game.floor % 5 === 0 ? `FLOOR ${game.floor} · BOSS LAIR` : (names[(game.floor - 1) % names.length] || `FLOOR ${game.floor}`);
+    $('floorLabel').textContent = `FLOOR ${game.floor} · ${game.floor % 5 === 0 ? 'BOSS LAIR' : (names[(game.floor - 1) % names.length] || 'DEEPER DUNGEON')}`;
     $('goalText').textContent = game.bossDefeated ? 'Find the stairs' : 'Defeat the boss';
     $('goalDetail').textContent = game.bossDefeated ? 'Step onto the blue stairs to descend.' : 'The stairs open after the boss falls.';
     $('eventLog').replaceChildren(...game.log.map(message => { const el = document.createElement('div'); el.className = 'event'; el.textContent = message; return el; }));
     $('pauseButton').innerHTML = game.state === 'paused' ? '▶ <span>Resume</span>' : 'Ⅱ <span>Pause</span>';
     $('blockButton').setAttribute('aria-pressed', String(game.blocking));
     $('blockButton').classList.toggle('active', game.blocking);
+    updateWayfinder();
     renderOverlay();
     draw();
   }
@@ -440,29 +494,41 @@
       const px = x * TILE, py = y * TILE;
       const seen = game.seen.has(key(x, y));
       const isFloor = !!game.map[y][x];
-      const variant = (x * 7 + y * 11) % 3;
       const atlas = environment['buch-dungeon'];
       if (atlas.complete && atlas.naturalWidth) {
         const source = isFloor
-          ? [[48, 48, 16, 16], [64, 48, 16, 16], [48, 80, 16, 16]][variant]
-          : [[48, 160, 32, 32], [48, 176, 32, 32], [48, 264, 32, 32]][variant];
+          ? [48, 48, 16, 16]
+          : [48, 160, 32, 32];
         ctx.drawImage(atlas, ...source, px, py, TILE, TILE);
       } else { ctx.fillStyle = isFloor ? '#35414a' : '#29333b'; ctx.fillRect(px, py, TILE, TILE); }
       if (seen && !isFloor && [directions.up, directions.down, directions.left, directions.right].some(([dx, dy]) => game.map[y + dy]?.[x + dx])) {
         if ((x * 17 + y * 23) % 13 === 0) {
           const props = environment['hyptosis-batch-1'];
           if (props.complete && props.naturalWidth) ctx.drawImage(props, 192, 896, 32, 32, px + 5, py + 4, TILE - 10, TILE - 8);
-        } else if ((x * 13 + y * 7) % 17 === 0) {
-          const crystal = environment['kyrise-crystal'];
-          if (crystal.complete && crystal.naturalWidth) ctx.drawImage(crystal, px + 10, py + 11, TILE - 20, TILE - 20);
         }
+      }
+      if (seen && isFloor) {
+        // Give rooms and corridors the same stone floor and a clean wall edge.
+        ctx.fillStyle = '#68879520'; ctx.fillRect(px + 3, py + 3, TILE - 6, TILE - 6);
+        ctx.strokeStyle = '#748e9155';
+        ctx.lineWidth = 3;
+        if (!game.map[y - 1]?.[x]) { ctx.beginPath(); ctx.moveTo(px, py + 1.5); ctx.lineTo(px + TILE, py + 1.5); ctx.stroke(); }
+        if (!game.map[y + 1]?.[x]) { ctx.beginPath(); ctx.moveTo(px, py + TILE - 1.5); ctx.lineTo(px + TILE, py + TILE - 1.5); ctx.stroke(); }
+        if (!game.map[y]?.[x - 1]) { ctx.beginPath(); ctx.moveTo(px + 1.5, py); ctx.lineTo(px + 1.5, py + TILE); ctx.stroke(); }
+        if (!game.map[y]?.[x + 1]) { ctx.beginPath(); ctx.moveTo(px + TILE - 1.5, py); ctx.lineTo(px + TILE - 1.5, py + TILE); ctx.stroke(); }
+        ctx.lineWidth = 1;
       }
       ctx.fillStyle = seen ? '#0c1b2229' : '#08131adf';
       ctx.fillRect(px, py, TILE, TILE);
-      ctx.strokeStyle = seen ? '#17283255' : '#10202988';
-      ctx.strokeRect(px + .5, py + .5, TILE - 1, TILE - 1);
     }
     const frame = Math.floor(animationTime / 210) % 4;
+    (game.route || []).slice(0, 7).forEach((step, index) => {
+      if (!game.seen.has(key(step.x, step.y)) || !game.map[step.y][step.x]) return;
+      ctx.fillStyle = game.bossDefeated ? '#83cfee' : '#f3a875';
+      ctx.globalAlpha = Math.max(.28, .72 - index * .06);
+      ctx.beginPath(); ctx.arc((step.x + .5) * TILE, (step.y + .5) * TILE, 3.5, 0, Math.PI * 2); ctx.fill();
+      ctx.globalAlpha = 1;
+    });
     if (game.seen.has(key(game.exit.x, game.exit.y))) {
       if (sprites.stairs.complete && sprites.stairs.naturalWidth) {
         drawSprite(ctx, 'stairs', game.exit.x * TILE, game.exit.y * TILE, game.bossDefeated ? 0 : 3, frame, TILE);
@@ -472,6 +538,14 @@
     game.potions.forEach(p => { if (game.seen.has(key(p.x, p.y))) {
       if (sprites.potion.complete && sprites.potion.naturalWidth) drawSprite(ctx, 'potion', p.x * TILE, p.y * TILE, 0, frame, TILE);
       else drawPotion(p.x, p.y);
+    } });
+    game.gems.forEach(gem => { if (game.seen.has(key(gem.x, gem.y))) {
+      const px = gem.x * TILE, py = gem.y * TILE;
+      ctx.fillStyle = '#8ae8f388';
+      ctx.beginPath(); ctx.arc(px + 20, py + 21, 16 + Math.sin(animationTime / 250) * 2, 0, Math.PI * 2); ctx.fill();
+      const crystal = environment['kyrise-crystal'];
+      if (crystal.complete && crystal.naturalWidth) ctx.drawImage(crystal, px + 7, py + 7, 26, 26);
+      else { ctx.fillStyle = '#91ebf5'; ctx.fillRect(px + 13, py + 11, 14, 19); }
     } });
     game.monsters.forEach(m => { const cell = cellOf(m); if (game.seen.has(key(cell.x, cell.y))) {
       const sprite = monsterArt[spriteFor(m.name)];
@@ -504,12 +578,16 @@
     // Preserve square pixels while the camera pans across whichever axis overflows.
     const size = Math.max(vw, vh, Math.min(vw, vh) * 1.18);
     const tile = size / W;
-    const left = Math.min(0, Math.max(vw - size, vw / 2 - (game.player.renderX + .5) * tile));
-    const top = Math.min(0, Math.max(vh - size, vh / 2 - (game.player.renderY + .5) * tile));
+    const left = vw / 2 - (game.player.renderX + .5) * tile;
+    const top = vh / 2 - (game.player.renderY + .5) * tile;
     canvas.style.width = `${size}px`;
     canvas.style.height = `${size}px`;
     canvas.style.left = `${left}px`;
     canvas.style.top = `${top}px`;
+    const frame = document.querySelector('.board-frame');
+    frame.style.setProperty('--tile-size', `${tile}px`);
+    frame.style.setProperty('--map-left', `${left}px`);
+    frame.style.setProperty('--map-top', `${top}px`);
   }
 
   function entityState(entity) {
@@ -554,6 +632,8 @@
       if (game.state === 'playing') {
         if (attackHeld) attack();
         enemyClock += delta;
+        guideClock += delta;
+        if (guideClock >= 320) { guideClock %= 320; updateWayfinder(); }
         if (enemyClock >= 320) {
           enemyClock %= 320;
           enemyTurn();
